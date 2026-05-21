@@ -436,8 +436,12 @@ function initSync() {
       _fbUnsub = _db.collection('users').doc(user.uid).collection('data').doc('state')
         .onSnapshot({includeMetadataChanges:true}, snap => {
           if (snap.metadata.hasPendingWrites) return; // our own write — skip
-          if (!snap.exists) { _pushToCloud(); return; } // first sign-in: push local data up
+          if (!snap.exists) { _pushToCloud(); return; } // no cloud data yet — push local up
           const d = snap.data();
+          const cloudCount = (d.tasks || []).length;
+          const localCount = tasks.length;
+          // If local has meaningfully more tasks, treat it as the source of truth
+          if (localCount > cloudCount + 3) { _pushToCloud(); return; }
           tasks    = d.tasks    || [];
           medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
@@ -468,11 +472,18 @@ function _pushToCloud() {
     .set({tasks, medLogs, recurLog, settings, plate, ctx});
 }
 
+function forcePushToCloud() {
+  if (!_currentUser) { showToast('Not signed in'); return; }
+  _pushToCloud();
+  showToast('Pushed local data to cloud ✓');
+}
+
 function _updateSyncBar() {
   const bar = document.getElementById('sync-bar');
   if (!bar) return;
   if (_currentUser) {
-    bar.innerHTML = `<span class="sync-ok">☁ Syncing · ${esc(_currentUser.email)}</span>`
+    bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)}</span>`
+      + `<button class="sync-btn sync-signout" onclick="forcePushToCloud()" title="Force push local data to cloud">↑ push</button>`
       + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
   } else {
     bar.innerHTML = `<button class="sync-btn sync-signin" onclick="signInWithGoogle()">☁ Sign in with Google to sync across devices</button>`;
