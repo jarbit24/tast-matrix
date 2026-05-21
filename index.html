@@ -134,10 +134,10 @@
     .plate-item  { background:var(--surface); border-radius:var(--r-sm); padding:11px 12px;
                    box-shadow:var(--shadow); margin-bottom:7px; }
     .plate-header{ display:flex; align-items:center; gap:9px; }
-    .plate-check { width:24px; height:24px; border-radius:50%; border:2px solid var(--accent);
+    .plate-check { width:20px; height:20px; border-radius:50%; border:2px solid var(--accent);
                    background:none; cursor:pointer; flex-shrink:0; transition:all .15s;
-                   display:flex; align-items:center; justify-content:center;
-                   font-size:12px; color:transparent; -webkit-tap-highlight-color:transparent; }
+                   display:flex; align-items:center; justify-content:center; position:relative; z-index:2;
+                   font-size:11px; color:transparent; -webkit-tap-highlight-color:transparent; }
     .plate-dot   { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
     .plate-title { flex:1; font-size:14px; line-height:1.3; }
     .plate-rm    { color:var(--text-3); background:none; border:none; cursor:pointer;
@@ -157,9 +157,14 @@
     .chunk-due   { font-size:10px; color:var(--text-3); background:var(--surface-2);
                    border-radius:5px; padding:1px 5px; white-space:nowrap; }
     .chunk-due.overdue { color:#c0392b; background:#fde8e8; }
+    .chunk-more  { background:none; border:none; color:var(--accent); font-size:11px;
+                   font-weight:500; cursor:pointer; padding:4px 0 2px; display:block;
+                   -webkit-tap-highlight-color:transparent; }
+    .sug-cat-step { font-size:9px; color:var(--text-3); font-style:italic; margin-top:1px;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 
     /* Two-column brief grid */
-    .grid-2col { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:4px; }
+    .grid-2col { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:4px; align-items:start; }
     .grid-2col > * { margin-bottom:0 !important; }
     /* Fire cards narrow */
     .grid-2col .fire-card { padding:10px; }
@@ -544,6 +549,7 @@ let recurLog = [];   // {id,taskId,title,completedAt} — history of recurring t
 let settings = {seasonalMeds:{bloom:false}};
 let plate    = {date:'',ids:[]};
 let ctx      = {date:'',time:null,energy:null};
+const expandedChunks = new Set(); // task IDs with chunk list expanded in plate view
 let curView  = 'brief';
 let bFilter    = 'all';
 let bSort      = 'cat'; // 'cat' | 'date'
@@ -1502,21 +1508,47 @@ function metaRow(t) {
 
 function chunkListHtml(t, inPlate=false) {
   if (!t.chunks||!t.chunks.length||t.time==='low') return '';
-  return `<div class="chunk-list">
-    ${t.chunks.map(ch=>{
-      const dBadge=ch.dueDate&&!ch.completedAt
-        ? (()=>{const d=daysUntil(ch.dueDate); return `<span class="chunk-due${d!==null&&d<0?' overdue':''}">📅&thinsp;${d===0?'today':fmtDateShort(ch.dueDate)}</span>`;})()
-        : '';
-      return `<div class="chunk-item">
-        <button class="chunk-ck ${ch.completedAt?'done':''}"
-                data-a="complete-chunk" data-tid="${t.id}" data-cid="${ch.id}">
-          ${ch.completedAt?'✓':''}
-        </button>
-        <span class="chunk-title ${ch.completedAt?'done':''}">${esc(ch.title)}</span>
-        ${dBadge}
-      </div>`;
-    }).join('')}
-  </div>`;
+  const expanded = !inPlate || expandedChunks.has(t.id);
+  const incomplete = t.chunks.filter(c=>!c.completedAt);
+  // Calculate collapsed view regardless of expanded state (needed for "show less" button)
+  const withDue = incomplete.filter(c=>c.dueDate).sort((a,b)=>a.dueDate<b.dueDate?-1:1);
+  const noDue   = incomplete.filter(c=>!c.dueDate);
+  const urgent  = withDue.filter(c=>daysUntil(c.dueDate)<=0);
+  const future  = withDue.filter(c=>daysUntil(c.dueDate)>0);
+  let collapsedView, hiddenCount = 0;
+  if (urgent.length > 0) {
+    collapsedView = urgent;
+    hiddenCount   = future.length + noDue.length;
+  } else if (future.length > 0) {
+    const soonestDate = future[0].dueDate;
+    collapsedView = future.filter(c=>c.dueDate===soonestDate);
+    hiddenCount   = future.filter(c=>c.dueDate!==soonestDate).length + noDue.length;
+  } else {
+    collapsedView = incomplete.length ? [incomplete[0]] : [];
+    hiddenCount   = incomplete.length - collapsedView.length;
+  }
+  const toRender = expanded ? t.chunks : collapsedView;
+  let toggleBtn = '';
+  if (inPlate) {
+    if (!expanded && hiddenCount > 0)
+      toggleBtn = `<button class="chunk-more" data-a="toggle-chunks" data-id="${t.id}">+ ${hiddenCount} more step${hiddenCount>1?'s':''}</button>`;
+    else if (expanded && hiddenCount > 0)
+      toggleBtn = `<button class="chunk-more" data-a="toggle-chunks" data-id="${t.id}">show less</button>`;
+  }
+  const rowsHtml = toRender.map(ch=>{
+    const dBadge=ch.dueDate&&!ch.completedAt
+      ? (()=>{const d=daysUntil(ch.dueDate); return `<span class="chunk-due${d!==null&&d<0?' overdue':''}">📅&thinsp;${d===0?'today':fmtDateShort(ch.dueDate)}</span>`;})()
+      : '';
+    return `<div class="chunk-item">
+      <button class="chunk-ck ${ch.completedAt?'done':''}"
+              data-a="complete-chunk" data-tid="${t.id}" data-cid="${ch.id}">
+        ${ch.completedAt?'✓':''}
+      </button>
+      <span class="chunk-title ${ch.completedAt?'done':''}">${esc(ch.title)}</span>
+      ${dBadge}
+    </div>`;
+  }).join('');
+  return `<div class="chunk-list">${rowsHtml}${toggleBtn}</div>`;
 }
 
 function medsSection() {
@@ -1605,14 +1637,25 @@ function viewBrief() {
     todayPl.forEach(t=>{
       const c=getcat(t.category);
       const prog=t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length}</span>`:'';
+      const plateDueDate = t.recurrence ? t.nextDue : t.deadline;
+      const plateDd = plateDueDate ? daysUntil(plateDueDate) : null;
+      const plateDlHtml = plateDd !== null
+        ? `<div style="margin:4px 0 2px"><span class="dl-tag ${dlClass(plateDd)}">📅&thinsp;${plateDd<0?Math.abs(plateDd)+'d overdue':plateDd===0?'today':fmtDateShort(plateDueDate)}</span></div>`
+        : '';
       h+=`<div class="plate-item">
         <div class="plate-header">
           <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
           <div class="plate-dot" style="background:${c.color}"></div>
-          <div class="plate-title">${titleLink(t)}</div>
+          <button style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:500;line-height:1.3;text-align:left;background:none;border:none;padding:0;cursor:pointer;color:var(--text)" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
           ${prog}
           ${t.recurrence?`<button class="plate-rm" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="font-size:13px">↷</button>`:''}
           <button class="plate-rm" data-a="rm-plate" data-id="${t.id}">✕</button>
+        </div>
+        ${plateDlHtml}
+        <div class="snooze-row">
+          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
+          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
+          ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
         </div>
         ${chunkListHtml(t, true)}
       </div>`;
@@ -1658,11 +1701,22 @@ function viewBrief() {
           <span class="sug-cat-hd-name" style="color:${cat.textColor||'white'}">${cat.name}</span>
         </div>`;
       catTasks.forEach(t=>{
-        const d=daysUntil(t.recurrence?t.nextDue:t.deadline);
-        const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':`${d}d`):'';
+        // Show all today/overdue steps + next upcoming step
+        const sugWithDue = t.chunks
+          ? t.chunks.filter(c=>!c.completedAt&&c.dueDate).sort((a,b)=>a.dueDate<b.dueDate?-1:1)
+          : [];
+        const urgentSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)<=0);
+        const futureSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)>0);
+        const nextFutureSug = futureSug[0];
+        const sugStepsToShow = [...urgentSug, ...(nextFutureSug?[nextFutureSug]:[])];
+        const dlSrc = sugStepsToShow.length ? sugStepsToShow[0].dueDate : (t.recurrence?t.nextDue:t.deadline);
+        const d = daysUntil(dlSrc);
+        const dlTxt = d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':`${d}d`):'';
+        const stepHints = sugStepsToShow.map(c=>`<div class="sug-cat-step">↳ ${esc(c.title)}</div>`).join('');
         h+=`<div class="sug-cat-item">
           <button class="sug-cat-add" data-a="add-plate" data-id="${t.id}">+</button>
-          <div><button class="sug-cat-ttl" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
+          <div style="min-width:0;overflow:hidden"><button class="sug-cat-ttl" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
+          ${stepHints}
           ${dlTxt?`<div class="sug-cat-dl">${dlTxt}</div>`:''}</div>
         </div>`;
       });
@@ -2030,7 +2084,8 @@ function openLogEditSheet(type, id) {
   el.addEventListener('click',e=>{if(e.target===el)closeLogEditModal();});
 }
 
-function closeEditModal(){const el=document.getElementById('edit-modal');if(el)el.remove();}
+let _editClosedAt = 0;
+function closeEditModal(){const el=document.getElementById('edit-modal');if(el){el.remove();_editClosedAt=Date.now();}}
 
 function syncEditChunkTitles() {
   document.querySelectorAll('[data-chunk-idx]').forEach(inp=>{
@@ -2068,6 +2123,7 @@ function renderEditChunks() {
 }
 
 function openEditSheet(id) {
+  if(Date.now()-_editClosedAt < 400) return; // ghost-click guard
   if(document.getElementById('edit-modal')) return;
   const t=tasks.find(x=>x.id===id); if(!t) return;
   editChunks = t.chunks ? t.chunks.map(c=>({id:c.id,title:c.title,completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})) : [];
@@ -2289,6 +2345,9 @@ document.addEventListener('click', e=>{
     case 'skip-recur':      skipRecurring(id); break;
     case 'skip-recur-edit': closeEditModal(); skipRecurring(id); break;
     case 'snooze':          snoozeTask(id, btn.dataset.snooze); break;
+    case 'toggle-chunks':
+      if(expandedChunks.has(id)) expandedChunks.delete(id); else expandedChunks.add(id);
+      rv(); break;
 
     case 'open-log-edit': openLogEditSheet(btn.dataset.type, id); break;
     case 'close-log-edit': closeLogEditModal(); break;
