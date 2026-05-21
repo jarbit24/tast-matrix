@@ -1,0 +1,2370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Task Matrix">
+  <meta name="theme-color" content="#F5F2EC">
+  <title>Task Matrix</title>
+  <!-- Firebase compat SDK (v10) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#F5F2EC; --surface:#FFFFFF; --surface-2:#F9F7F4;
+      --text:#2A2A2A; --text-2:#6B6B6B; --text-3:#ABABAB;
+      --accent:#7B9E87; --accent-light:#EAF2EC;
+      --fire:#C2624F; --fire-light:#FCEAE7;
+      --upcoming:#5A7FB5; --upcoming-light:#EAF0FB;
+      --border:#E8E5DF; --shadow:0 2px 8px rgba(0,0,0,0.07);
+      --r:14px; --r-sm:10px; --nav-h:68px; --sync-h:28px;
+    }
+    html,body { height:100%; background:var(--bg);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;
+      color:var(--text); overflow:hidden; }
+    #sync-bar { height:var(--sync-h); display:flex; align-items:center; justify-content:center;
+      gap:8px; padding:0 12px; background:var(--surface-2); border-bottom:1px solid var(--border);
+      font-size:11px; color:var(--text-2); flex-shrink:0; }
+    .sync-ok    { color:var(--text-2); }
+    .sync-btn   { background:none; border:none; cursor:pointer; font-size:11px; padding:3px 8px;
+                  border-radius:6px; }
+    .sync-signin  { color:var(--accent); font-weight:600; }
+    .sync-signout { color:var(--text-3); }
+    #app { height:calc(100dvh - var(--nav-h) - var(--sync-h)); overflow-y:auto;
+      -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+    .view { padding:18px 16px 32px; }
+
+    /* Nav */
+    #nav { position:fixed; bottom:0; left:0; right:0; height:var(--nav-h);
+      background:var(--surface); border-top:1px solid var(--border);
+      display:flex; align-items:stretch; padding-bottom:env(safe-area-inset-bottom); }
+    .nav-btn { flex:1; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:3px; border:none; background:none; cursor:pointer;
+      color:var(--text-3); font-size:10px; font-weight:600; letter-spacing:.03em;
+      transition:color .15s; -webkit-tap-highlight-color:transparent; }
+    .nav-btn .ni { font-size:22px; line-height:1; }
+    .nav-btn.active { color:var(--accent); }
+
+    /* Typography */
+    .page-title { font-size:24px; font-weight:700; margin-bottom:2px; }
+    .page-sub   { font-size:13px; color:var(--text-2); margin-bottom:16px; }
+    .greeting   { font-size:22px; font-weight:700; margin-bottom:2px; }
+    .date-str   { font-size:13px; color:var(--text-2); margin-bottom:14px; }
+    .sec-hd     { font-size:10px; font-weight:700; letter-spacing:.09em;
+                  text-transform:uppercase; color:var(--text-2); margin:20px 0 10px; }
+    .sec-row    { display:flex; justify-content:space-between; align-items:center; margin:20px 0 10px; }
+    .sec-row .sec-hd { margin:0; }
+    .link-btn   { font-size:12px; color:var(--accent); background:none; border:none;
+                  cursor:pointer; font-weight:600; -webkit-tap-highlight-color:transparent; }
+
+    /* Cards */
+    .card { background:var(--surface); border-radius:var(--r); padding:14px;
+            box-shadow:var(--shadow); margin-bottom:12px; }
+
+    /* Meds */
+    .meds-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .med-group{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+    .med-btn  { display:flex; flex-direction:column; align-items:center; gap:2px;
+                padding:9px 12px; border:2px solid var(--border); border-radius:12px;
+                background:var(--surface); cursor:pointer; transition:all .15s; min-width:60px;
+                -webkit-tap-highlight-color:transparent; }
+    .med-btn.taken   { background:var(--accent-light); }
+    .med-btn.skipped { background:var(--surface-2); opacity:.55; }
+    .med-ck   { font-size:15px; line-height:1; }
+    .med-name { font-size:12px; font-weight:700; letter-spacing:.04em; }
+    .med-time { font-size:10px; color:var(--text-2); }
+    .med-skip { font-size:10px; color:var(--text-3); background:none; border:none;
+                cursor:pointer; padding:2px 8px; border-radius:4px; white-space:nowrap;
+                -webkit-tap-highlight-color:transparent; }
+    .med-skip.active { color:#c0392b; font-weight:700; }
+    .meds-hd  { display:flex; justify-content:space-between; align-items:center; }
+    .meds-hd-label { font-size:13px; font-weight:700; }
+
+    /* Fire / urgent cards */
+    .fire-card  { background:var(--fire-light); border:1px solid #F0C0BA;
+                  border-radius:var(--r); padding:14px; margin-bottom:8px; }
+    .fire-top   { display:flex; justify-content:space-between; align-items:flex-start;
+                  gap:8px; margin-bottom:6px; }
+    .fire-title { font-size:15px; font-weight:600; flex:1; }
+    .days-badge { font-size:10px; font-weight:700; padding:3px 8px; border-radius:4px;
+                  background:var(--surface-2); white-space:nowrap; flex-shrink:0; }
+    .fire-btns  { display:flex; gap:6px; margin-top:10px; }
+    .fire-btn   { flex:1; padding:7px; border-radius:var(--r-sm); border:1px solid;
+                  font-size:12px; font-weight:600; cursor:pointer; text-align:center;
+                  -webkit-tap-highlight-color:transparent; }
+    .fire-btn-done { background:var(--fire-light); border-color:var(--fire); color:var(--fire); }
+    .fire-btn-add  { background:var(--accent-light); border-color:var(--accent); color:var(--accent); }
+    .fire-btn-skip { background:var(--surface); border-color:var(--border); color:var(--text-2); }
+
+    /* Upcoming card */
+    .upcoming-card { display:flex; align-items:center; gap:10px; background:var(--surface);
+                     border-radius:var(--r-sm); padding:11px 12px; box-shadow:var(--shadow);
+                     margin-bottom:7px; border-left:3px solid var(--upcoming); }
+    .upcoming-info { flex:1; min-width:0; }
+    .upcoming-title{ font-size:14px; font-weight:500; margin-bottom:4px; }
+    .upcoming-days { font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;
+                     background:var(--surface-2); white-space:nowrap; flex-shrink:0; }
+    .upcoming-add  { width:28px; height:28px; border-radius:8px; border:1px solid var(--upcoming);
+                     background:var(--upcoming-light); color:var(--upcoming); font-size:18px;
+                     cursor:pointer; display:flex; align-items:center; justify-content:center;
+                     flex-shrink:0; -webkit-tap-highlight-color:transparent; }
+
+    /* Context picker */
+    .ctx-card  { background:var(--surface); border-radius:var(--r); padding:16px;
+                 box-shadow:var(--shadow); margin-bottom:12px; }
+    .ctx-title { font-size:15px; font-weight:600; margin-bottom:14px; }
+    .ctx-label { font-size:11px; font-weight:600; color:var(--text-2); margin-bottom:7px; }
+    .ctx-row   { margin-bottom:13px; }
+    .pill-group{ display:flex; gap:7px; }
+    .pill-btn  { flex:1; padding:9px 4px; border:2px solid var(--border); border-radius:7px;
+                 background:none; font-size:12px; cursor:pointer; text-align:center;
+                 transition:all .12s; -webkit-tap-highlight-color:transparent; }
+    .pill-btn.sel { border-color:var(--accent); background:var(--accent-light);
+                    color:var(--accent); font-weight:700; }
+
+    /* Today's Plate */
+    .plate-item  { background:var(--surface); border-radius:var(--r-sm); padding:11px 12px;
+                   box-shadow:var(--shadow); margin-bottom:7px; }
+    .plate-header{ display:flex; align-items:center; gap:9px; }
+    .plate-check { width:24px; height:24px; border-radius:50%; border:2px solid var(--accent);
+                   background:none; cursor:pointer; flex-shrink:0; transition:all .15s;
+                   display:flex; align-items:center; justify-content:center;
+                   font-size:12px; color:transparent; -webkit-tap-highlight-color:transparent; }
+    .plate-dot   { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .plate-title { flex:1; font-size:14px; line-height:1.3; }
+    .plate-rm    { color:var(--text-3); background:none; border:none; cursor:pointer;
+                   padding:4px; font-size:16px; -webkit-tap-highlight-color:transparent; }
+    .progress-badge { font-size:10px; font-weight:700; padding:2px 6px; background:var(--surface-2);
+                      border-radius:6px; color:var(--text-2); white-space:nowrap; }
+    /* Chunk list inside plate */
+    .chunk-list  { margin-top:9px; padding-top:9px; border-top:1px solid var(--border); }
+    .chunk-item  { display:flex; align-items:center; gap:8px; padding:5px 0; flex-wrap:wrap; }
+    .chunk-ck    { width:20px; height:20px; border-radius:50%; border:2px solid var(--border);
+                   background:none; cursor:pointer; flex-shrink:0; display:flex;
+                   align-items:center; justify-content:center; font-size:11px;
+                   color:transparent; transition:all .15s; -webkit-tap-highlight-color:transparent; }
+    .chunk-ck.done{ background:var(--accent); border-color:var(--accent); color:white; }
+    .chunk-title { font-size:13px; flex:1; }
+    .chunk-title.done{ text-decoration:line-through; color:var(--text-3); }
+    .chunk-due   { font-size:10px; color:var(--text-3); background:var(--surface-2);
+                   border-radius:5px; padding:1px 5px; white-space:nowrap; }
+    .chunk-due.overdue { color:#c0392b; background:#fde8e8; }
+
+    /* Two-column brief grid */
+    .grid-2col { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:4px; }
+    .grid-2col > * { margin-bottom:0 !important; }
+    /* Fire cards narrow */
+    .grid-2col .fire-card { padding:10px; }
+    .grid-2col .fire-top  { flex-wrap:wrap; }
+    .grid-2col .fire-title{ font-size:13px; flex-basis:100%; margin-bottom:2px; }
+    /* Upcoming cards narrow */
+    .grid-2col .upcoming-card { flex-wrap:wrap; }
+    .grid-2col .upcoming-info { flex-basis:100%; margin-bottom:4px; }
+    /* Plate items narrow */
+    .grid-2col .plate-item { padding:9px 10px; }
+    /* Suggestion cards narrow */
+    .grid-2col .sug-card { padding:9px 10px; }
+
+    /* Suggestions */
+    .sug-card  { display:flex; align-items:flex-start; gap:10px; background:var(--surface-2);
+                 border:1px solid var(--border); border-radius:var(--r-sm);
+                 padding:10px 12px; margin-bottom:7px; }
+    .sug-add   { width:28px; height:28px; border-radius:50%; border:none; background:var(--accent);
+                 color:white; font-size:20px; cursor:pointer; flex-shrink:0; display:flex;
+                 align-items:center; justify-content:center; line-height:1; padding-bottom:1px;
+                 -webkit-tap-highlight-color:transparent; }
+    .sug-title { font-size:14px; font-weight:500; margin-bottom:4px; line-height:1.3; }
+
+    /* Task card */
+    .task-card { display:flex; align-items:flex-start; gap:10px; background:var(--surface);
+                 border-radius:var(--r-sm); padding:11px 12px; box-shadow:var(--shadow);
+                 margin-bottom:7px; }
+    .task-ck   { width:22px; height:22px; border-radius:50%; border:2px solid var(--border);
+                 background:none; cursor:pointer; flex-shrink:0; margin-top:1px;
+                 -webkit-tap-highlight-color:transparent; }
+    .task-body { flex:1; min-width:0; }
+    .task-title{ font-size:14px; font-weight:500; margin-bottom:5px; line-height:1.3; }
+    .task-link { color:inherit; text-decoration:underline; text-decoration-color:var(--accent); text-underline-offset:2px; }
+    .task-link:visited { color:inherit; }
+    .task-desc { font-size:11px; color:var(--text-3); margin-top:4px; line-height:1.4; font-style:italic; }
+    .task-meta { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+    .cat-chip  { font-size:10px; font-weight:600; padding:2px 7px; border-radius:4px;
+                 white-space:nowrap; }
+    .meta-tag  { font-size:10px; color:var(--text-2); background:var(--surface-2);
+                 padding:2px 6px; border-radius:4px; }
+    .dl-tag    { font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px;
+                 background:var(--surface-2); }
+    .dl-future  { color:#2a6d38; }
+    .dl-today   { color:#444444; }
+    .dl-overdue { color:#c0392b; }
+    .recur-badge{ font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px;
+                  background:var(--surface-2); color:var(--text-2); white-space:nowrap; }
+    .add-plate-btn { width:30px; height:30px; border-radius:8px; border:1px solid var(--accent);
+                     background:var(--accent-light); color:var(--accent); font-size:18px;
+                     cursor:pointer; display:flex; align-items:center; justify-content:center;
+                     flex-shrink:0; align-self:center; -webkit-tap-highlight-color:transparent; }
+
+    /* Form */
+    .form-group { margin-bottom:18px; }
+    .form-label { display:block; font-size:11px; font-weight:700; color:var(--text-2);
+                  text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px; }
+    .form-input { width:100%; padding:13px 12px; border:2px solid var(--border);
+                  border-radius:var(--r-sm); font-size:15px; background:var(--surface);
+                  color:var(--text); outline:none; transition:border-color .15s;
+                  -webkit-appearance:none; }
+    .form-input:focus { border-color:var(--accent); }
+    .form-select{ width:100%; padding:13px 36px 13px 12px; border:2px solid var(--border);
+                  border-radius:var(--r-sm); font-size:14px; background:var(--surface);
+                  color:var(--text); outline:none; -webkit-appearance:none; appearance:none;
+                  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7'%3E%3Cpath d='M5 7L0 0h10z' fill='%236B6B6B'/%3E%3C/svg%3E");
+                  background-repeat:no-repeat; background-position:right 14px center; }
+    .form-input-sm { padding:10px 10px; font-size:14px; }
+    .opt-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .opt-btn  { padding:10px 4px; border:2px solid var(--border); border-radius:var(--r-sm);
+                background:none; font-size:12px; cursor:pointer; text-align:center;
+                transition:all .12s; -webkit-tap-highlight-color:transparent; }
+    .opt-btn.sel { border-color:var(--accent); background:var(--accent-light);
+                   color:var(--accent); font-weight:700; }
+    .tab-pair { display:flex; gap:8px; margin-bottom:12px; }
+    .tab-btn  { flex:1; padding:9px; border:2px solid var(--border); border-radius:var(--r-sm);
+                background:none; font-size:12px; cursor:pointer; text-align:center;
+                transition:all .12s; -webkit-tap-highlight-color:transparent; }
+    .tab-btn.sel { border-color:var(--accent); background:var(--accent-light);
+                   color:var(--accent); font-weight:700; }
+    .submit-btn { width:100%; padding:15px; background:var(--accent); color:white;
+                  border:none; border-radius:var(--r-sm); font-size:16px; font-weight:700;
+                  cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    .inline-row { display:flex; gap:8px; align-items:center; }
+    .inline-lbl { font-size:13px; color:var(--text-2); white-space:nowrap; }
+    .hint-row   { font-size:12px; color:var(--text-2); padding:8px 10px; background:var(--accent-light);
+                  border-radius:var(--r-sm); margin-bottom:8px; }
+    .chunk-form-row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+    .recur-box  { background:var(--surface-2); border-radius:var(--r-sm); padding:12px;
+                  margin-top:10px; }
+
+    /* Backlog search */
+    .b-search-wrap { position:relative; margin-bottom:12px; }
+    .b-search-wrap input { padding-left:34px; padding-right:34px; }
+    .b-search-ico { position:absolute; left:11px; top:50%; transform:translateY(-50%);
+                    color:var(--text-3); font-size:14px; pointer-events:none; }
+    .b-search-clear { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+                      background:none; border:none; color:var(--text-3); font-size:20px;
+                      cursor:pointer; padding:2px 4px; line-height:1;
+                      -webkit-tap-highlight-color:transparent; }
+
+    /* Backlog */
+    .filter-row { display:flex; gap:6px; margin-bottom:16px; overflow-x:auto; padding-bottom:2px;
+                  -webkit-overflow-scrolling:touch; }
+    .filter-row::-webkit-scrollbar { display:none; }
+    .fchip { flex-shrink:0; padding:6px 12px; border-radius:6px; border:1px solid var(--border);
+             background:var(--surface); font-size:12px; cursor:pointer; white-space:nowrap;
+             -webkit-tap-highlight-color:transparent; }
+    .fchip.on { background:var(--accent); color:white; border-color:var(--accent); }
+    .cat-hd { display:flex; align-items:center; gap:8px; margin:20px 0 9px; }
+    .cat-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .cat-hd-name { font-size:13px; font-weight:700; }
+    .cat-hd-ct   { font-size:11px; color:var(--text-3); }
+
+    /* Log */
+    .log-date { font-size:11px; font-weight:700; color:var(--text-2); text-transform:uppercase;
+                letter-spacing:.07em; padding:6px 0 5px; border-bottom:1px solid var(--border);
+                margin-bottom:6px; }
+    .log-item { display:flex; align-items:flex-start; gap:8px; padding:8px 0;
+                border-bottom:1px solid var(--border); }
+    .log-ico  { font-size:15px; flex-shrink:0; margin-top:1px; }
+    .log-body { flex:1; font-size:13px; line-height:1.35; }
+    .log-sub  { font-size:11px; color:var(--text-2); }
+    .log-time { font-size:11px; color:var(--text-3); flex-shrink:0; white-space:nowrap; }
+
+    /* Toggle switch */
+    .toggle-row-sm  { display:flex; justify-content:space-between; align-items:center; }
+    .toggle-lbl     { font-size:14px; font-weight:600; }
+    .toggle { width:44px; height:26px; border-radius:13px; background:var(--border);
+              border:none; cursor:pointer; position:relative; transition:background .2s;
+              flex-shrink:0; }
+    .toggle::after { content:''; position:absolute; width:20px; height:20px; border-radius:50%;
+                     background:white; top:3px; left:3px; transition:transform .2s;
+                     box-shadow:0 1px 3px rgba(0,0,0,.2); }
+    .toggle.on { background:var(--accent); }
+    .toggle.on::after { transform:translateX(18px); }
+
+    /* Modal */
+    .modal-ov    { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:300;
+                   display:flex; align-items:flex-end; }
+    .modal-sheet { background:var(--surface); border-radius:20px 20px 0 0;
+                   padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+                   width:100%; max-height:80dvh; overflow-y:auto; }
+    .modal-title { font-size:17px; font-weight:700; text-align:center; margin-bottom:16px; }
+    .m-toggle-row{ display:flex; justify-content:space-between; align-items:center;
+                   padding:12px 0; border-bottom:1px solid var(--border); }
+    .m-tgl-lbl   { font-size:14px; font-weight:600; }
+    .m-tgl-sub   { font-size:11px; color:var(--text-2); margin-top:1px; }
+    .task-edit-btn { background:none; border:none; font-size:17px; padding:4px 5px;
+                     color:var(--text-3); cursor:pointer; line-height:1; flex-shrink:0;
+                     -webkit-tap-highlight-color:transparent; }
+    .task-edit-btn:active { color:var(--accent); }
+    .log-del-btn { font-size:13px; opacity:.6; }
+    .log-del-btn:active { opacity:1; color:#c0392b; }
+    .edit-field  { width:100%; padding:10px 12px; border:1.5px solid var(--border);
+                   border-radius:var(--r-sm); font-size:15px; background:var(--surface-2);
+                   color:var(--text); outline:none; margin-bottom:12px;
+                   font-family:inherit; -webkit-appearance:none; }
+    .edit-field:focus { border-color:var(--accent); }
+    .edit-label  { font-size:11px; font-weight:700; letter-spacing:.07em; display:block;
+                   text-transform:uppercase; color:var(--text-2); margin-bottom:5px; }
+    .snooze-row  { display:flex; gap:6px; margin-bottom:14px; }
+    .snooze-btn  { flex:1; padding:7px 4px; border-radius:8px; border:1.5px solid var(--border);
+                   font-size:12px; font-weight:600; cursor:pointer; background:var(--surface-2);
+                   color:var(--text-2); -webkit-tap-highlight-color:transparent; }
+    .edit-pills  { display:flex; gap:6px; margin-bottom:14px; }
+    .edit-pill   { flex:1; padding:8px 6px; border-radius:8px; border:1.5px solid var(--border);
+                   font-size:11px; font-weight:600; cursor:pointer; background:var(--surface-2);
+                   color:var(--text-2); text-align:center; -webkit-tap-highlight-color:transparent; }
+    .edit-pill.sel { background:var(--accent-light); border-color:var(--accent); color:var(--accent); }
+    .edit-cancel { width:100%; padding:10px; background:none; border:none; color:var(--text-2);
+                   font-size:14px; cursor:pointer; margin-top:4px; }
+    .edit-del    { width:100%; padding:10px; background:none; border:1.5px solid #E8A0A0;
+                   border-radius:var(--r-sm); font-size:14px; font-weight:600; color:var(--fire);
+                   cursor:pointer; margin-top:6px; -webkit-tap-highlight-color:transparent; }
+    .recur-opt   { width:100%; display:flex; flex-direction:column; gap:3px; padding:13px 14px;
+                   margin-bottom:9px; border-radius:var(--r-sm); border:1.5px solid var(--border);
+                   background:var(--surface-2); cursor:pointer; text-align:left;
+                   -webkit-tap-highlight-color:transparent; transition:border-color .12s; }
+    .recur-opt:active { border-color:var(--accent); }
+    .recur-opt-lbl  { font-size:11px; font-weight:700; text-transform:uppercase;
+                      letter-spacing:.07em; color:var(--text-2); }
+    .recur-opt-date { font-size:14px; font-weight:500; color:var(--text); margin-top:2px; }
+    .recur-opt-rel  { font-size:11px; color:var(--text-3); }
+    .modal-done  { width:100%; padding:13px; margin-top:16px; background:var(--accent);
+                   color:white; border:none; border-radius:var(--r-sm); font-size:15px;
+                   font-weight:700; cursor:pointer; }
+
+    /* Empty */
+    .empty { text-align:center; padding:40px 16px; color:var(--text-2); }
+    .empty-ico { font-size:42px; margin-bottom:10px; }
+    .empty-txt { font-size:14px; line-height:1.5; }
+
+    /* Toast */
+    #toast { position:fixed; bottom:calc(var(--nav-h)+14px); left:50%; transform:translateX(-50%);
+             background:#2A2A2A; color:white; padding:9px 18px; border-radius:20px;
+             font-size:13px; font-weight:500; opacity:0; transition:opacity .2s; z-index:400;
+             white-space:nowrap; pointer-events:none; }
+    #toast.show { opacity:1; }
+
+    @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.35)} 100%{transform:scale(1)} }
+    .anim-pop { animation:pop .22s ease; }
+  </style>
+</head>
+<body>
+<div id="sync-bar">
+  <button class="sync-btn sync-signin" onclick="signInWithGoogle()">☁ Sign in with Google to sync across devices</button>
+</div>
+<div id="app"></div>
+<nav id="nav">
+  <button class="nav-btn active" data-nav="brief" ><span class="ni">🌅</span>Today</button>
+  <button class="nav-btn"        data-nav="add"   ><span class="ni">➕</span>Add</button>
+  <button class="nav-btn"        data-nav="backlog"><span class="ni">📋</span>Tasks</button>
+  <button class="nav-btn"        data-nav="log"   ><span class="ni">📜</span>Log</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════
+
+const CATS = [
+  {id:'comp-admin',     name:'Computer · Admin',              emoji:'💻',color:'#1e6b7a'},
+  {id:'comp-creative',  name:'Computer · Creative',           emoji:'✨',color:'#9191e9',textColor:'#1a1a2e'},
+  {id:'house',          name:'House · Cats · Garden',         emoji:'🏡',color:'#357266'},
+  {id:'shopping',       name:'Shopping · Errands',            emoji:'🛍️',color:'#f2bb05',textColor:'#3a2d00'},
+  {id:'personal',       name:'Personal · Health',             emoji:'💚',color:'#4e7fa0'},
+  {id:'crafts-work',    name:'Crafts · Work',                 emoji:'🔧',color:'#5068a0'},
+  {id:'crafts-creative',name:'Crafts · Creative',             emoji:'🎨',color:'#4d8fbf'},
+  {id:'misc',           name:'Miscellaneous',                 emoji:'📌',color:'#a3bbad',textColor:'#2a3d32'},
+];
+
+const MEDS = [
+  {id:'esc10',name:'ESC 10',full:'Lexapro',            type:'daily',   skippable:false,color:'#5BAD72'},
+  {id:'bloom',name:'BLOOM', full:'Zyrtec / Cetirizine',type:'seasonal',skippable:true, color:'#C9A227'},
+  {id:'evp',  name:'EVP',   full:'Evvy Probiotic',      type:'daily',   skippable:true, color:'#9B7FD4'},
+  {id:'d2000',name:'D 2000',full:'Vitamin D',           type:'daily',   skippable:false,color:'#E8914D'},
+  {id:'fsh',  name:'FSH',   full:'Fish Oil',            type:'daily',   skippable:true, color:'#4A87C8'},
+  {id:'ws9',  name:'WS 9', full:'WS 9',               type:'daily',   skippable:false,color:'#E87DB3'},
+];
+
+const TIME_OPTS   = [{v:'short',label:'< 1 hr',levels:['low']},{v:'medium',label:'1–3 hrs',levels:['low','medium']},{v:'full',label:'Free day',levels:['low','medium','high']}];
+const ENERGY_OPTS = [{v:'low',label:'Low',levels:['low']},{v:'medium',label:'Medium',levels:['low','medium']},{v:'high',label:'High',levels:['low','medium','high']}];
+const TIME_LBL    = {low:'0–30 min',medium:'30m–2hr',high:'2+ hrs'};
+const EFFORT_LBL  = {low:'💤 Light',medium:'⚡ Medium',high:'🔥 Heavy'};
+const EFFORT_SH   = {low:'light',medium:'medium',high:'heavy'};
+const WEEKDAYS    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const ORDINALS    = [{v:'1',label:'first'},{v:'2',label:'second'},{v:'3',label:'third'},{v:'4',label:'fourth'},{v:'-1',label:'last'}];
+
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE SYNC
+// ═══════════════════════════════════════════════════════════
+// ▶ Paste your Firebase project config here (replace all REPLACE_ME values):
+const FB_CONFIG = {
+  apiKey:            "AIzaSyAFXiyXtaoRUZMgAqxA3ayzaB74bPHb_Rc",
+  authDomain:        "task-matrix-26.firebaseapp.com",
+  projectId:         "task-matrix-26",
+  storageBucket:     "task-matrix-26.firebasestorage.app",
+  messagingSenderId: "441740578783",
+  appId:             "1:441740578783:web:2009c34fa627bd29b83e6a"
+};
+
+let _db = null, _currentUser = null, _fbUnsub = null;
+
+function initSync() {
+  if (!FB_CONFIG.apiKey || FB_CONFIG.apiKey === 'REPLACE_ME') return;
+  firebase.initializeApp(FB_CONFIG);
+  const auth = firebase.auth();
+  _db = firebase.firestore();
+
+  // Handle redirect sign-in result (mobile fallback)
+  auth.getRedirectResult().catch(()=>{});
+
+  auth.onAuthStateChanged(user => {
+    _currentUser = user;
+    _updateSyncBar();
+    if (user) {
+      if (_fbUnsub) _fbUnsub();
+      _fbUnsub = _db.collection('users').doc(user.uid).collection('data').doc('state')
+        .onSnapshot({includeMetadataChanges:true}, snap => {
+          if (snap.metadata.hasPendingWrites) return; // our own write — skip
+          if (!snap.exists) { _pushToCloud(); return; } // first sign-in: push local data up
+          const d = snap.data();
+          tasks    = d.tasks    || [];
+          medLogs  = d.medLogs  || [];
+          recurLog = d.recurLog || [];
+          settings = d.settings || {seasonalMeds:{bloom:false}};
+          const today = todayStr();
+          if (d.plate && d.plate.date === today) plate = d.plate;
+          if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
+          // Mirror to localStorage
+          try {
+            localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
+            localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
+            localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
+            localStorage.setItem('tm_settings', JSON.stringify(settings));
+            localStorage.setItem('tm_plate',    JSON.stringify(plate));
+            localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
+          } catch(e){}
+          rv();
+        });
+    } else {
+      if (_fbUnsub) { _fbUnsub(); _fbUnsub = null; }
+    }
+  });
+}
+
+function _pushToCloud() {
+  if (!_db || !_currentUser) return;
+  _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
+    .set({tasks, medLogs, recurLog, settings, plate, ctx});
+}
+
+function _updateSyncBar() {
+  const bar = document.getElementById('sync-bar');
+  if (!bar) return;
+  if (_currentUser) {
+    bar.innerHTML = `<span class="sync-ok">☁ Syncing · ${esc(_currentUser.email)}</span>`
+      + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
+  } else {
+    bar.innerHTML = `<button class="sync-btn sync-signin" onclick="signInWithGoogle()">☁ Sign in with Google to sync across devices</button>`;
+  }
+}
+
+function signInWithGoogle() {
+  if (!_db) return;
+  const p = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(p).catch(e => {
+    if (e.code==='auth/popup-blocked'||e.code==='auth/popup-closed-by-user') {
+      firebase.auth().signInWithRedirect(p);
+    } else { showToast('Sign-in error: ' + e.message); }
+  });
+}
+
+function signOutGoogle() {
+  firebase.auth().signOut().then(()=>showToast('Signed out'));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+
+let tasks    = [];   // {id,title,category,time,effort,deadline,leadTime,recurrence,nextDue,chunks,createdAt,completedAt}
+let medLogs  = [];   // {id,medId,takenAt}
+let recurLog = [];   // {id,taskId,title,completedAt} — history of recurring task completions
+let settings = {seasonalMeds:{bloom:false}};
+let plate    = {date:'',ids:[]};
+let ctx      = {date:'',time:null,energy:null};
+let curView  = 'brief';
+let bFilter    = 'all';
+let bSort      = 'cat'; // 'cat' | 'date'
+let bSearch    = '';
+let editChunks = [];   // live chunk state while edit sheet is open
+
+// Add-form state (survives re-renders)
+let AF = {
+  title:'',category:'misc',time:'medium',effort:'medium',
+  deadline:'',
+  recurring:false,recurType:'interval',
+  recurEvery:'1',recurUnit:'days',
+  recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',
+  chunks:[],showChunks:false,
+};
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+
+const todayStr  = () => new Date().toLocaleDateString('en-CA');
+const newId     = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc       = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const titleLink = t => t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener" class="task-link">${esc(t.title)}</a>` : esc(t.title);
+const descLine  = t => t.description ? `<div class="task-desc">${esc(t.description)}</div>` : '';
+const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
+const getcat    = id => CATS.find(c=>c.id===id)||CATS[CATS.length-1];
+const getmed    = id => MEDS.find(m=>m.id===id);
+
+function daysUntil(dl) {
+  if (!dl) return null;
+  const diff = new Date(dl+'T12:00:00') - new Date(todayStr()+'T00:00:00');
+  return Math.ceil(diff/86400000);
+}
+function fmtTime(iso){ return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}); }
+function fmtDateFull(ds){ return new Date(ds+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}); }
+function fmtDateShort(ds){ return new Date(ds+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function fmtNextDue(ds){
+  const d=daysUntil(ds);
+  if(d===0) return 'today'; if(d===1) return 'tomorrow'; if(d===-1) return 'yesterday';
+  return fmtDateShort(ds);
+}
+function greet(){ const h=new Date().getHours(); return h<12?'Good morning':h<17?'Good afternoon':'Good evening'; }
+
+// ═══════════════════════════════════════════════════════════
+//  RECURRENCE MATH
+// ═══════════════════════════════════════════════════════════
+
+function nthWeekdayInMonth(year, month, n, weekday) {
+  // n: 1-4 or -1 (last). weekday: 0=Sun…6=Sat
+  if (n === -1) {
+    const last = new Date(year, month+1, 0);
+    const diff = (last.getDay() - weekday + 7) % 7;
+    return new Date(year, month, last.getDate() - diff);
+  }
+  const first = new Date(year, month, 1);
+  const diff  = (weekday - first.getDay() + 7) % 7;
+  const result= new Date(year, month, 1+diff+(n-1)*7);
+  return result.getMonth()===month ? result : null; // guard against 5th week overflow
+}
+
+function calcNextDue(rec, fromStr) {
+  const from = new Date(fromStr+'T12:00:00');
+  if (rec.type === 'interval') {
+    const n = parseInt(rec.every)||1;
+    const next = new Date(from);
+    if (rec.unit==='days')   next.setDate(next.getDate()+n);
+    else if (rec.unit==='weeks') next.setDate(next.getDate()+n*7);
+    else if (rec.unit==='months') next.setMonth(next.getMonth()+n);
+    else if (rec.unit==='years')  next.setFullYear(next.getFullYear()+n);
+    return next.toLocaleDateString('en-CA');
+  }
+  if (rec.type === 'weekday') {
+    const wk=parseInt(rec.week), wd=parseInt(rec.weekday), mi=parseInt(rec.monthInterval)||1;
+    let yr=from.getFullYear(), mo=from.getMonth();
+    for (let a=0; a<24; a++) {
+      if (a>0) { mo+=mi; while(mo>11){mo-=12;yr++;} }
+      const cand = nthWeekdayInMonth(yr, mo, wk, wd);
+      if (cand && cand.toLocaleDateString('en-CA') > fromStr) return cand.toLocaleDateString('en-CA');
+    }
+  }
+  return fromStr;
+}
+
+function recurLabel(rec) {
+  if (!rec) return '';
+  if (rec.type==='interval') {
+    const n=parseInt(rec.every)||1;
+    if (n===1) return `↻ daily`.replace('daily', rec.unit==='days'?'daily':rec.unit==='weeks'?'weekly':rec.unit==='months'?'monthly':'yearly');
+    return `↻ every ${n} ${rec.unit}`;
+  }
+  if (rec.type==='weekday') {
+    const ord = ORDINALS.find(o=>o.v===String(rec.week));
+    const day = WEEKDAYS[parseInt(rec.weekday)];
+    const mi  = parseInt(rec.monthInterval)||1;
+    return `↻ ${ord?.label||''} ${day}${mi>1?` / ${mi}mo`:''}`;
+  }
+  return '↻';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BRIEF VISIBILITY
+// ═══════════════════════════════════════════════════════════
+
+function briefStatus(task) {
+  const dueDate = task.recurrence ? task.nextDue : task.deadline;
+  if (!dueDate) return null;
+  const d = daysUntil(dueDate);
+  if (d < 0)  return 'overdue';
+  if (d === 0) return 'today';
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SEED DATA  (one-time backlog import from CSV)
+// ═══════════════════════════════════════════════════════════
+
+const CAT_DEC = {CA:'comp-admin',CC:'comp-creative',CW:'crafts-work',CR:'crafts-creative',HO:'house',SH:'shopping',PE:'personal',MI:'misc'};
+const TE_DEC  = {HH:{time:'high',effort:'high'},HL:{time:'low',effort:'high'},LH:{time:'high',effort:'low'},LL:{time:'low',effort:'low'}};
+const REC_DEC = {
+  '1D':{type:'interval',every:1,unit:'days'},
+  '2D':{type:'interval',every:2,unit:'days'},
+  '4D':{type:'interval',every:4,unit:'days'},
+  '5D':{type:'interval',every:5,unit:'days'},
+  '1W':{type:'interval',every:1,unit:'weeks'},
+  '2W':{type:'interval',every:2,unit:'weeks'},
+  '3W':{type:'interval',every:3,unit:'weeks'},
+  '6W':{type:'interval',every:6,unit:'weeks'},
+  '1M':{type:'interval',every:1,unit:'months'},
+  '2M':{type:'interval',every:2,unit:'months'},
+  '3M':{type:'interval',every:3,unit:'months'},
+  '4M':{type:'interval',every:4,unit:'months'},
+  '6M':{type:'interval',every:6,unit:'months'},
+  '1Y':{type:'interval',every:1,unit:'years'},
+  '5Y':{type:'interval',every:5,unit:'years'},
+};
+
+// Format: ["title","catCode","teCode","YYYY-MM-DD",leadDays,"recurCode"]
+const SEED_TASKS = [
+// ── HH (↑↑Cog ↑↑Time) ─────────────────────────────────────
+["SEMBA tournament protocols – cash, clocks, caddies, free plays, hospitality; digital display","CW","HH","2026-03-15",5,""],
+["GGVI Matrix","CA","HH","2026-03-17",1,"2D"],
+["GG - Identify first 3 maps and documents to digitize, coordinate with SEMCOG; begin testing vectorization tool and chunk tasks","CA","HH","2026-03-18",0,""],
+["Prepare statistical validation requirements for GGVI FOR Summer 2026","CA","HH","2026-03-20",3,""],
+["Speedweve jeans patch","PE","HH","2026-03-20",2,""],
+["GI working paper outline - definitively say something, comfortable with people contacting about concrete idea; restrict sharing","CA","HH","2026-03-25",5,""],
+["Bridge problem of the day - brainstorm categories/problems","CW","HH","2026-03-30",5,""],
+["Explore sensor siting","CA","HH","2026-03-30",2,""],
+["RARI automated annual reports - chunk + schedule","CA","HH","2026-03-30",5,""],
+["Trainings - reset, chunk, schedule","CA","HH","2026-04-27",1,""],
+["QGIS siren map","HO","HH","2026-05-05",4,""],
+["Annual Report","CA","HH","2026-05-10",5,""],
+["SEMBA site feature article","CW","HH","2026-05-11",10,"4M"],
+["ESRI siren map","HO","HH","2026-05-15",5,""],
+["Spatial injustice working/white paper - skeleton","CA","HH","2026-05-15",0,""],
+["TT - Summer Format/ideate","CW","HH","2026-05-15",30,"1Y"],
+["SEMBA trophy python script","CW","HH","2026-05-30",10,""],
+["Access Corelogic parcel data for Au Train","CA","HH","2026-06-01",0,""],
+["Add explanations for indicators missing this","CA","HH","2026-06-01",0,""],
+["The Conversation - Curious kids explainer: Filter First, Climate Havens, flooding, etc","CA","HH","2026-06-01",14,""],
+["TT - Summer I/N","CW","HH","2026-06-01",30,"1Y"],
+["TT - Summer Feature article","CW","HH","2026-06-10",30,"1Y"],
+["TT - Summer Panel write-up","CW","HH","2026-06-25",30,"1Y"],
+["SEMBA AD report","CW","HH","2026-08-04",10,"3M"],
+["TT - Fall Format/ideate","CW","HH","2026-08-15",30,"1Y"],
+["TT - Fall I/N","CW","HH","2026-09-01",30,"1Y"],
+["TT - Fall Feature article","CW","HH","2026-09-10",30,"1Y"],
+["TT - Fall Panel write-up","CW","HH","2026-10-10",30,"1Y"],
+["TT - Spring Format/ideate","CW","HH","2027-01-15",30,"1Y"],
+["Taxes – CSS, SEMBA, 529 college accounts, MI Public Radio, MS, Kalshi","PE","HH","2027-03-15",14,"1Y"],
+["TT - Spring","CW","HH","2027-04-20",60,"1Y"],
+// ── HL (↑↑Cog ↓↓Time) ─────────────────────────────────────
+["Kerry Williams - Marygrove","CA","HL","2026-03-19",0,""],
+["Print 50 SEMBA cheatsheets","CW","HL","2026-03-20",0,""],
+["USBF supporting members - get back in; chunk/schedule","CW","HL","2026-03-25",2,""],
+["Complete demographic table with Midwest subtitle","CA","HL","2026-04-30",0,""],
+["Follow up with Ethan Planet Detroit","CA","HL","2026-04-30",0,""],
+["Follow up with Josh (JEI)","CA","HL","2026-04-30",0,""],
+["Reach out to Gina - collect information for Sample Construction section re: EM contact info","CA","HL","2026-04-30",0,""],
+["Use Mailchimp to produce Response rate (following AAPOR)","CA","HL","2026-04-30",0,""],
+["RISE Action items","CA","HL","2026-05-01",0,""],
+["Earl 1:1 prep","CA","HL","2026-05-18",3,"1M"],
+["SEMBA membership (stats, transactions, 5/5/5 current)","CW","HL","2026-05-21",2,"1M"],
+["Fix budget sheet","PE","HL","2026-05-25",5,""],
+["Corelogic variable availability","CA","HL","2026-06-01",0,""],
+["Update partnership desk","CA","HL","2026-06-03",2,"1M"],
+["A2 book lunch (2026: Fri=Potbelly, Sat=Mancinos)","CW","HL","2027-02-20",7,"1Y"],
+["A2 tournament tables plan","CW","HL","2027-03-11",5,"1Y"],
+// ── LH (↓↓Cog ↑↑Time) ─────────────────────────────────────
+["SEMBA site past three months - Member updates page","CW","LH","2026-04-05",1,"1M"],
+["DTE monthly - 2023 temp other half","PE","LH","2026-04-11",2,""],
+["BTF development sheet","CA","LH","2026-04-14",0,""],
+["DTE monthly - 2023 electric other half","PE","LH","2026-04-20",2,""],
+["EM survey methodology","CA","LH","2026-04-21",0,""],
+["GI survey analysis - readme like EM data","CA","LH","2026-04-22",1,""],
+["GI survey geocode - clean outputs of one or both exports","CA","LH","2026-04-22",2,""],
+["IG screenshots: past two months","PE","LH","2026-04-22",1,"2M"],
+["Monday club partnership desk","CW","LH","2026-04-22",0,""],
+["IG screenshots: April 13-June 13, 2025","PE","LH","2026-04-23",0,""],
+["IG screenshots: Oct 14-Dec 13, 2025","PE","LH","2026-04-26",0,""],
+["Python bot lessons 4-7","PE","LH","2026-04-26",0,""],
+["Water system","HO","LH","2026-04-26",4,""],
+["Basket clear out","HO","LH","2026-04-29",1,"2M"],
+["Framing Owen bridge/map","CW","LH","2026-04-29",0,""],
+["Known Supply - textiles/Goodwill + drop at Fedex","PE","LH","2026-04-29",0,""],
+["Return - 1","PE","LH","2026-04-29",0,"1W"],
+["SEMBA Digital archive site uploads (Ron, Julie K)","CW","LH","2026-04-29",0,""],
+["Sewing machine test/book repair (Sandy's Make it Sew)","PE","LH","2026-04-29",0,""],
+["AAG lookups - organize, summarize, next steps","CA","LH","2026-04-30",1,""],
+["DTE monthly - 2023 gas half","PE","LH","2026-04-30",5,""],
+["DTE Monthly Gas - half of 2024","PE","LH","2026-04-30",2,""],
+["IG screenshots: Dec 14, 2025-Feb 13, 2026","PE","LH","2026-04-30",1,""],
+["Mower Maintenance (oil change, hose cleaning)","HO","LH","2026-04-30",14,"1Y"],
+["SEMBA postcard - send end of April/early May","CW","LH","2026-04-30",5,"1Y"],
+["DMACS - log all flood-related questions","CA","LH","2026-05-01",1,""],
+["DTE monthly - 2023 electric half","PE","LH","2026-05-01",2,""],
+["Bridge World cataloging","CW","LH","2026-05-02",2,""],
+["Office cleanup","HO","LH","2026-05-02",0,""],
+["TT archiving in new binders","CW","LH","2026-05-02",0,""],
+["IG screenshots: June 14-Aug 13, 2025","PE","LH","2026-05-07",0,""],
+["Caribbean vacay","PE","LH","2026-05-08",0,""],
+["Nature Masterclass - Data Analysis: Conducting and Troubleshooting","CA","LH","2026-05-10",2,""],
+["Nature Masterclass - Experiments: From Idea to Design","CA","LH","2026-05-10",2,""],
+["Nature Masterclass - Persuasive Grant Writing","CA","LH","2026-05-10",2,""],
+["Python bot electives","PE","LH","2026-05-10",0,""],
+["Dresser design with laundry bins under","PE","LH","2026-05-12",0,""],
+["DTE monthly - 2023 temp half","PE","LH","2026-05-12",2,""],
+["Nature Masterclass - Creating Successful Research Posters","CA","LH","2026-05-12",2,""],
+["Nature Masterclass - Finding Funding Opportunities","CA","LH","2026-05-12",2,""],
+["Thousand Fell recycling - figure out","PE","LH","2026-05-12",0,""],
+["DTE monthly - 2023 gas other half","PE","LH","2026-05-15",2,""],
+["Matrix on Canva?","PE","LH","2026-05-15",3,""],
+["Nature Masterclass - Getting an Academic Research Position","CA","LH","2026-05-15",2,""],
+["SEMBA Digital archive site page - photos, trophies, bulletins","CW","LH","2026-05-15",3,""],
+["Teacher + Limited game bookmarks - 50 for letters","CW","LH","2026-05-15",0,""],
+["Nature Masterclass - Building a Strong Online Researcher Profile","CA","LH","2026-05-16",2,""],
+["Nature Masterclass - Navigating Scientific Writing: Webinar Recording","CA","LH","2026-05-17",2,""],
+["Nature Masterclass - Interpreting Scientific Results","CA","LH","2026-05-20",2,""],
+["Nature Masterclass - Publishing a Research Paper","CA","LH","2026-05-20",2,""],
+["Nature Masterclass - Advancing your Scientific Presentations","CA","LH","2026-05-24",2,""],
+["IG screenshots: Aug 14-Oct 13, 2025","PE","LH","2026-05-25",0,""],
+["Matrix app formatting","PE","LH","2026-05-25",0,""],
+["Nature Masterclass - Choosing the Best Journal for Your Paper","CA","LH","2026-05-27",2,""],
+["DTE Monthly Gas - other half of 2024","PE","LH","2026-05-30",5,""],
+["Nature Masterclass - Strategies for Choosing Your Journal: Webinar recording","CA","LH","2026-05-30",2,""],
+["Investigate who isn't returning and winning tournaments (plan/schedule python)","CW","LH","2026-05-31",2,""],
+["Minneapolis/Houghton accommodations + schedule","PE","LH","2026-05-31",15,""],
+["Nature Masterclass - Data Analysis: Planning and Preparing","CA","LH","2026-05-31",2,""],
+["Nature Masterclass - Managing Research Data","CA","LH","2026-06-01",2,""],
+["Organize dev ideas/paperwork","CA","LH","2026-06-01",4,""],
+["Nature Masterclass - Publishing a Research Paper: 2nd Edition","CA","LH","2026-06-02",2,""],
+["Nature Masterclass - Increasing your Visibility Using Social Media: Webinar Recording","CA","LH","2026-06-05",2,""],
+["Nature Masterclass - Narrative Tools for Researchers","CA","LH","2026-06-07",2,""],
+["Nature Masterclass - Writing a Research Paper","CA","LH","2026-06-08",2,""],
+["Nature Masterclass - Writing a Research Paper: 2nd Edition","CA","LH","2026-06-10",2,""],
+["Nature Masterclass - Writing and Publishing a Review Paper","CA","LH","2026-06-12",2,""],
+["Nature Masterclass - Writing and Publishing a Review Paper: 2nd Edition","CA","LH","2026-06-13",2,""],
+["Nature Masterclass - Introduction to Collaboration","CA","LH","2026-06-14",2,""],
+["Nature Masterclass - Participating in a Collaboration","CA","LH","2026-06-16",2,""],
+["Nature Masterclass - Leading a Collaboration","CA","LH","2026-06-18",2,""],
+["Nature Masterclass - Effective Science Communication","CA","LH","2026-06-20",2,""],
+["Nature Masterclass - Leveraging Your Online Researcher Profile: Webinar Recording","CA","LH","2026-06-20",2,""],
+["Nature Masterclass - Mastering Your Manuscript Revisions: Webinar Recording","CA","LH","2026-06-23",2,""],
+["Nature Masterclass - Maximising the Impact of Your Paper","CA","LH","2026-06-24",2,""],
+["Nature Masterclass - Demystifying Grant Budgets: Webinar Recording","CA","LH","2026-06-25",2,""],
+["Nature Masterclass - Networking for Researchers","CA","LH","2026-06-26",2,""],
+["Nature Masterclass - Promoting Your Research Online: Webinar Recording","CA","LH","2026-06-27",2,""],
+["Nature Masterclass - Research Integrity: Publication Ethics","CA","LH","2026-06-29",2,""],
+["Nature Masterclass - Strengthening Your Reviews: Webinar Recording","CA","LH","2026-06-30",2,""],
+["Nature Masterclass - Focus on Peer Review","CA","LH","2026-07-01",2,""],
+["Garage","HO","LH","2026-07-03",30,"6M"],
+["Keep lists","PE","LH","2026-07-06",14,"6M"],
+["SEMBA letters","CW","LH","2026-08-30",7,"4M"],
+["Set up Heattrak","HO","LH","2026-11-01",14,""],
+["SEMBA - generate insurance for Jan, Feb, April","CW","LH","2027-01-10",2,"1Y"],
+["ACBL Tournament insurance - Annual","CW","LH","2027-01-20",5,"1Y"],
+["Webber banana bread","PE","LH","2027-02-05",1,""],
+// ── LL (↓↓Cog ↓↓Time) ─────────────────────────────────────
+["email Debbie/Amber","MI","LL","2026-05-03",0,""],
+["Bedroom HEPA filter","HO","LL","2026-05-06",0,"3M"],
+["Levoit filter","HO","LL","2026-05-06",0,"3M"],
+["Mouse bait stations/peppermint oil","HO","LL","2026-05-06",0,"1M"],
+["Soak shower heads - dish soap + white vinegar","HO","LL","2026-05-06",0,"3M"],
+["Tryon - 1","PE","LL","2026-05-06",0,"1W"],
+["Water softener refill","HO","LL","2026-05-06",0,"1M"],
+["Indyx - log 1 item","PE","LL","2026-05-07",0,"1W"],
+["Cat litter","HO","LL","2026-05-08",0,"5D"],
+["Slate new","PE","LL","2026-05-08",0,"4D"],
+["ACBL remittance log","CW","LL","2026-05-09",1,"3M"],
+["Cat claws","HO","LL","2026-05-09",0,"3W"],
+["Charge Quip+Slate","PE","LL","2026-05-10",2,"1M"],
+["Quip head","PE","LL","2026-05-04",2,"3M"],
+["SEMBA - generate insurance for May, June, Aug, Oct, Spook, Nov","CW","LL","2026-05-10",0,"1Y"],
+["Calendar/inboxes (Personal)","PE","LL","2026-05-12",1,"1W"],
+["Fireplace","HO","LL","2026-05-13",0,"1M"],
+["Poshmark/BNT/Bulk mail - guest room - 1","PE","LL","2026-05-13",0,"1W"],
+["Vacuum (full)","HO","LL","2026-05-13",0,"1M"],
+["Bunting labs - Mary Anne King","CA","LL","2026-05-14",0,""],
+["Candle jars - research, schedule","PE","LL","2026-05-15",3,""],
+["ebike","PE","LL","2026-05-15",2,""],
+["SEMBA - contacts/facility for insurance for Spook","CW","LL","2026-05-15",0,""],
+["Starred emails (CSS)","CA","LL","2026-05-15",2,"1M"],
+["Starred emails (Personal)","PE","LL","2026-05-15",2,"1M"],
+["ATC/CSJ","PE","LL","2026-05-18",2,"1M"],
+["BBO (100)","CW","LL","2026-05-20",2,"1M"],
+["CSS timesheet","CA","LL","2026-05-20",2,"1M"],
+["Sheets/towels","HO","LL","2026-05-20",0,"1M"],
+["Swiss teams record","CW","LL","2026-05-20",0,"6M"],
+["5/5/5 mid-month check","CW","LL","2026-05-21",2,"1M"],
+["User folder sort pt. iii","CA","LL","2026-05-24",0,""],
+["DSC new","PE","LL","2026-05-25",0,"2M"],
+["Amex payment","PE","LL","2026-05-27",4,"1M"],
+["Bathrooms - soap, sink, toilet, towel, mirror, floor","HO","LL","2026-05-27",0,"3W"],
+["Citi payment","PE","LL","2026-05-27",4,"1M"],
+["Landing page updates","CA","LL","2026-05-27",7,"1M"],
+["WF payment","PE","LL","2026-05-27",2,"1M"],
+["5/5/5 (current + new contacts)","CW","LL","2026-05-28",3,"1M"],
+["BOA Payment","PE","LL","2026-05-28",4,"1M"],
+["Chase payments","PE","LL","2026-05-28",4,"1M"],
+["Discover payment","PE","LL","2026-05-28",4,"1M"],
+["Target card payment","PE","LL","2026-05-28",4,"1M"],
+["S&S","PE","LL","2026-05-29",7,"1M"],
+["5/5/5 (summary + new contacts)","CW","LL","2026-05-30",2,"1M"],
+["Print 100 SEMBA club bookmarks + updated Trenton","CW","LL","2026-05-31",1,""],
+["DTE payment","PE","LL","2026-06-01",0,"1M"],
+["Synchrony payments","PE","LL","2026-06-01",0,"1M"],
+["UMCU payment","PE","LL","2026-06-01",0,"1M"],
+["Monthly finances: NW + budget review","PE","LL","2026-06-05",1,"1M"],
+["Paystub monthly","PE","LL","2026-06-05",0,"1M"],
+["DTE monthly","PE","LL","2026-06-06",0,"1M"],
+["TT Summer panel last call (48 hrs)","CW","LL","2026-06-12",1,"1Y"],
+["Haircut","PE","LL","2026-06-15",2,"6W"],
+["Costco renew + auto-renew","PE","LL","2026-06-20",1,"1Y"],
+["5/5/5 summary","CW","LL","2026-07-02",1,"3M"],
+["Table Talk - Summer to edits","CW","LL","2026-07-10",14,"1Y"],
+["Couch pillows/blankets","HO","LL","2026-07-21",3,"3M"],
+["SEMBA site - May meeting minutes","CW","LL","2026-09-01",14,"1Y"],
+["TT Fall panel email - due Oct 1","CW","LL","2026-09-01",7,"1Y"],
+["Car registration renewal","PE","LL","2026-09-02",2,"1Y"],
+["Order checks?","PE","LL","2026-10-01",2,""],
+["TT Fall panel email last call (48 hrs)","CW","LL","2026-10-01",1,"1Y"],
+["DSC order (8)","PE","LL","2026-10-07",8,""],
+["Table Talk - Fall to edits","CW","LL","2026-10-19",14,"1Y"],
+["Change Incogni to 7464","PE","LL","2026-12-25",10,""],
+["SEMBA Domain renewal","CW","LL","2027-01-05",3,""],
+["SEMBA site - Aug meeting minutes","CW","LL","2027-01-05",40,"1Y"],
+["TT Spring panel email - due Feb 12","CW","LL","2027-01-08",7,"1Y"],
+["SEMBA roster for trophies","CW","LL","2027-01-10",3,"1Y"],
+["SEMBA Jan tournament flyer/results archive","CW","LL","2027-02-04",5,"1Y"],
+["SEMBA - trophy plaques","CW","LL","2027-02-10",1,"1Y"],
+["TT Spring panel last call (48 hrs)","CW","LL","2027-02-12",1,"1Y"],
+["SEMBA site - Nov meeting minutes","CW","LL","2027-03-12",14,"1Y"],
+["Table Talk - Spring to edits","CW","LL","2027-04-18",14,"1Y"],
+["SEMBA site - Feb meeting minutes","CW","LL","2027-05-06",7,"1Y"],
+["TT Summer panel email - due June 20","CW","LL","2027-05-06",4,"1Y"],
+["License renewal","PE","LL","2031-03-15",2,"5Y"],
+["Call Wildlife x team about attic","HO","LL","",0,""],
+["Corelogic data for Alter road","CA","HH","2026-05-12",0,""],
+["Julie pick a map to start with; mid-June small chunk + run validation","CA","LL","2026-05-12",0,""],
+["2026-27 Workplan","CA","HL","2026-05-15",0,""],
+["Calendar/inboxes (CSS)","CA","LL","2026-05-19",1,"1W"],
+["Quip head - reschedule","PE","LL","2026-08-12",1,"3M"],
+["Woodward BBQ catering followup","CW","LL","2026-05-16",0,""],
+["Trash/recycling","HO","LL","2026-05-19",1,"1W"],
+["Water testing","PE","HL","2026-05-25",0,""],
+["cssLOG","CA","LL","2026-05-26",0,"2W"],
+["Research 3:1 prep","CA","LL","2026-05-19",1,"1W"],
+["Mac desktop/downloads/documents","PE","LL","2026-06-13",0,"1M"],
+["Check Dort","PE","LL","2026-06-15",1,"1M"],
+["Vacuum (lite)","HO","LL","2026-05-22",1,"1W"],
+["Clean out fridge","HO","LL","2026-06-05",0,"3W"],
+["CCCU payment","PE","LL","2026-06-15",4,"1M"],
+["Water softener buy","HO","LL","2026-06-15",7,"1M"],
+["Deposit 68.67 to Huntington Bank","CW","LL","2026-05-18",0,""],
+["GPW","PE","LL","2026-05-23",1,"1W"],
+];
+
+function seedTasks() {
+  const today = todayStr();
+  return SEED_TASKS.map(([title,cat,te,date,lead,rec]) => {
+    const teD  = TE_DEC[te] || {};
+    const recD = rec ? REC_DEC[rec] : null;
+    const deadline = (!recD && date) ? date : null;
+    const nextDue  = (recD && date) ? (date < today ? calcNextDue(recD, today) : date) : null;
+    return {
+      id: 'seed_' + Math.random().toString(36).slice(2,9),
+      title,
+      category: CAT_DEC[cat] || 'misc',
+      time:     teD.time   || null,
+      effort:   teD.effort || null,
+      deadline,
+      recurrence: recD,
+      nextDue,
+      chunks: [],
+      createdAt: today,
+      completedAt: null
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SEED LOG  (one-time history import from Sheet7.csv)
+// ═══════════════════════════════════════════════════════════
+
+// Format: ["YYYY-MM-DDTHH:MM:SS","medId"]  — one per med per day (deduplicated), local time
+const SEED_MEDLOG = [
+["2026-05-18T08:05:00","fsh"],["2026-05-18T08:05:47","evp"],["2026-05-18T08:05:42","esc10"],["2026-05-18T08:05:36","d2000"],["2026-05-18T06:43:37","ws9"],
+["2026-05-17T09:05:53","fsh"],["2026-05-17T09:05:47","evp"],["2026-05-17T09:05:42","esc10"],["2026-05-17T09:05:36","d2000"],["2026-05-17T08:43:37","ws9"],
+["2026-05-16T10:36:07","fsh"],["2026-05-16T10:36:01","evp"],["2026-05-16T10:36:28","esc10"],["2026-05-16T10:36:20","d2000"],["2026-05-16T08:53:37","ws9"],
+["2026-05-15T11:51:53","fsh"],["2026-05-15T11:53:50","esc10"],["2026-05-15T11:53:45","d2000"],["2026-05-15T11:53:37","ws9"],
+["2026-05-14T08:51:47","evp"],["2026-05-14T08:51:42","esc10"],["2026-05-14T08:51:36","d2000"],["2026-05-14T07:55:10","ws9"],
+["2026-05-13T08:05:58","fsh"],["2026-05-13T08:05:51","evp"],["2026-05-13T08:05:43","esc10"],["2026-05-13T08:05:35","d2000"],["2026-05-13T07:20:31","ws9"],
+["2026-05-12T09:15:36","fsh"],["2026-05-12T09:15:31","evp"],["2026-05-12T09:15:23","esc10"],["2026-05-12T09:14:59","d2000"],["2026-05-12T09:14:51","ws9"],
+["2026-05-11T10:15:36","fsh"],["2026-05-11T10:15:36","evp"],["2026-05-11T10:15:36","esc10"],["2026-05-11T10:15:36","d2000"],["2026-05-11T09:15:36","ws9"],
+["2026-05-10T09:19:58","fsh"],["2026-05-10T09:19:54","evp"],["2026-05-10T09:19:49","esc10"],["2026-05-10T09:19:45","d2000"],["2026-05-10T08:59:40","ws9"],
+["2026-05-09T09:15:36","fsh"],["2026-05-09T09:15:36","evp"],["2026-05-09T09:15:36","esc10"],["2026-05-09T09:15:36","d2000"],["2026-05-09T08:35:36","ws9"],
+["2026-05-07T09:45:32","fsh"],["2026-05-07T09:45:25","evp"],["2026-05-07T09:45:15","esc10"],["2026-05-07T09:45:09","d2000"],["2026-05-07T08:45:36","ws9"],
+["2026-05-06T11:06:11","fsh"],["2026-05-06T11:05:51","evp"],["2026-05-06T11:05:58","esc10"],["2026-05-06T11:06:06","d2000"],["2026-05-06T10:07:03","ws9"],
+["2026-05-05T09:43:21","fsh"],["2026-05-05T09:42:56","evp"],["2026-05-05T09:43:02","esc10"],["2026-05-05T09:43:09","d2000"],["2026-05-05T08:39:13","ws9"],
+["2026-05-04T09:23:29","fsh"],["2026-05-04T09:23:07","evp"],["2026-05-04T09:23:13","esc10"],["2026-05-04T09:23:19","d2000"],["2026-05-04T07:41:16","ws9"],
+["2026-05-03T10:49:16","fsh"],["2026-05-03T10:49:01","evp"],["2026-05-03T10:49:06","esc10"],["2026-05-03T10:49:11","d2000"],["2026-05-03T09:32:06","ws9"],
+["2026-05-02T10:38:31","fsh"],["2026-05-02T10:38:15","evp"],["2026-05-02T10:38:20","esc10"],["2026-05-02T10:38:25","d2000"],["2026-05-02T08:38:09","ws9"],
+["2026-05-01T13:39:25","fsh"],["2026-05-01T13:39:10","evp"],["2026-05-01T13:39:16","esc10"],["2026-05-01T13:39:20","d2000"],["2026-05-01T08:19:05","ws9"],
+["2026-04-30T09:26:18","fsh"],["2026-04-30T09:25:58","evp"],["2026-04-30T09:26:04","esc10"],["2026-04-30T09:26:09","d2000"],["2026-04-30T08:31:06","ws9"],
+["2026-04-29T09:34:36","fsh"],["2026-04-29T09:34:13","evp"],["2026-04-29T09:34:22","esc10"],["2026-04-29T09:34:30","d2000"],["2026-04-29T08:34:08","ws9"],
+["2026-04-28T09:25:59","evp"],["2026-04-28T09:26:09","esc10"],["2026-04-28T09:26:27","d2000"],["2026-04-28T08:22:41","ws9"],
+["2026-04-27T09:53:38","evp"],["2026-04-27T09:53:32","esc10"],["2026-04-27T08:53:53","d2000"],["2026-04-27T08:13:32","ws9"],
+["2026-04-26T08:53:53","d2000"],["2026-04-26T08:13:32","ws9"],
+["2026-04-25T09:53:38","evp"],["2026-04-25T09:53:32","esc10"],["2026-04-25T08:53:53","d2000"],["2026-04-25T08:13:32","ws9"],
+["2026-04-24T09:53:32","esc10"],["2026-04-24T08:53:53","d2000"],["2026-04-24T08:13:32","ws9"],
+["2026-04-23T09:53:32","esc10"],["2026-04-23T08:13:32","ws9"],
+["2026-04-22T08:53:32","esc10"],["2026-04-22T08:13:32","ws9"],
+["2026-04-21T08:42:58","d2000"],
+["2026-04-20T09:50:02","fsh"],["2026-04-20T09:49:47","evp"],["2026-04-20T09:49:54","esc10"],["2026-04-20T09:50:07","d2000"],["2026-04-20T08:53:16","ws9"],
+["2026-04-19T18:19:42","esc10"],["2026-04-19T09:39:31","ws9"],
+["2026-04-18T13:00:21","esc10"],["2026-04-18T13:00:31","d2000"],
+["2026-04-17T13:00:16","evp"],["2026-04-17T13:00:21","esc10"],["2026-04-17T13:00:31","d2000"],["2026-04-17T07:25:12","ws9"],
+["2026-04-16T13:00:16","evp"],["2026-04-16T13:00:21","esc10"],["2026-04-16T13:00:31","d2000"],["2026-04-16T07:30:12","ws9"],
+["2026-04-15T19:57:35","esc10"],["2026-04-15T12:57:22","ws9"],
+["2026-04-14T10:12:46","ws9"],
+["2026-04-13T11:06:33","esc10"],["2026-04-13T11:06:35","d2000"],["2026-04-13T10:06:22","ws9"],
+["2026-04-11T08:18:58","esc10"],["2026-04-11T08:18:52","evp"],
+["2026-04-10T05:53:21","ws9"],
+["2026-04-09T08:18:58","esc10"],["2026-04-09T08:18:52","evp"],["2026-04-09T07:53:21","ws9"],
+["2026-04-08T08:19:02","d2000"],["2026-04-08T08:18:52","evp"],
+["2026-04-07T08:18:58","esc10"],["2026-04-07T08:18:52","evp"],
+["2026-04-06T08:28:59","ws9"],
+["2026-04-05T13:29:02","esc10"],["2026-04-05T09:28:59","ws9"],
+["2026-04-04T11:28:59","fsh"],["2026-04-04T10:05:59","d2000"],
+["2026-04-03T09:52:38","fsh"],["2026-04-03T09:52:47","evp"],["2026-04-03T09:52:51","esc10"],["2026-04-03T09:52:57","d2000"],
+["2026-04-02T08:46:27","esc10"],
+["2026-04-01T14:59:22","esc10"],["2026-04-01T14:59:26","d2000"],
+["2026-03-29T09:12:42","fsh"],["2026-03-29T09:12:55","evp"],["2026-03-29T09:13:05","esc10"],["2026-03-29T08:13:17","ws9"],
+["2026-03-28T08:17:27","ws9"],
+["2026-03-27T09:21:40","fsh"],["2026-03-27T09:21:45","evp"],["2026-03-27T09:21:49","esc10"],["2026-03-27T09:21:57","d2000"],["2026-03-27T07:22:04","ws9"],
+["2026-03-25T10:22:49","evp"],["2026-03-25T10:22:56","d2000"],["2026-03-25T09:22:41","ws9"],
+["2026-03-24T11:37:24","fsh"],["2026-03-24T11:37:30","evp"],["2026-03-24T11:37:38","esc10"],["2026-03-24T11:37:42","d2000"],
+["2026-03-23T12:37:57","fsh"],["2026-03-23T12:38:02","evp"],
+["2026-03-22T11:17:15","evp"],["2026-03-22T11:17:20","esc10"],["2026-03-22T11:17:25","d2000"],["2026-03-22T08:17:06","ws9"],
+["2026-03-21T10:15:23","fsh"],["2026-03-21T10:15:30","esc10"],["2026-03-21T10:15:33","d2000"],["2026-03-21T08:47:18","ws9"],
+["2026-03-20T11:53:59","esc10"],["2026-03-20T11:54:04","d2000"],
+["2026-03-17T08:58:23","esc10"],["2026-03-17T08:58:39","evp"],["2026-03-17T08:58:47","d2000"],["2026-03-17T08:07:26","ws9"],
+["2026-03-16T11:56:12","fsh"],["2026-03-16T11:55:53","evp"],["2026-03-16T11:55:45","esc10"],["2026-03-16T11:56:05","d2000"],
+["2026-03-14T09:48:18","esc10"],["2026-03-14T09:48:24","d2000"],
+["2026-03-13T12:37:35","evp"],
+["2026-03-08T13:34:14","esc10"],["2026-03-08T13:34:19","d2000"],
+["2026-03-07T19:38:44","esc10"],["2026-03-07T19:38:44","d2000"],
+["2026-03-06T19:38:44","d2000"],
+["2026-03-05T19:38:44","esc10"],["2026-03-05T19:38:44","d2000"],
+["2026-03-04T19:38:44","esc10"],
+["2026-03-03T19:38:44","esc10"],
+["2026-03-02T19:38:44","d2000"],
+["2026-03-01T19:38:44","d2000"],
+["2026-02-28T10:38:48","d2000"],
+["2026-02-27T12:27:49","esc10"],
+["2026-02-26T10:04:27","esc10"],
+["2026-02-24T09:33:28","esc10"],["2026-02-24T09:33:24","d2000"],
+["2026-02-23T10:22:15","d2000"],
+["2026-02-22T11:00:25","esc10"],["2026-02-22T11:00:02","d2000"],
+["2026-02-21T09:13:47","esc10"],["2026-02-21T09:13:43","d2000"],
+["2026-02-20T08:53:53","esc10"],["2026-02-20T08:53:46","d2000"],
+["2026-02-19T09:34:36","esc10"],["2026-02-19T09:34:32","d2000"],
+["2026-02-18T09:59:22","esc10"],["2026-02-18T09:59:16","d2000"],
+["2026-02-17T10:22:13","esc10"],["2026-02-17T10:22:10","d2000"],
+["2026-02-16T09:10:13","esc10"],["2026-02-16T09:10:09","d2000"],
+["2026-02-15T10:06:52","esc10"],["2026-02-15T10:06:52","d2000"],
+["2026-02-14T10:06:52","esc10"],["2026-02-14T10:06:49","d2000"],
+["2026-02-13T09:05:33","d2000"],
+["2026-02-12T09:13:52","esc10"],["2026-02-12T09:13:47","d2000"],
+["2026-02-11T08:06:36","esc10"],["2026-02-11T08:06:30","d2000"],
+["2026-02-10T09:19:10","esc10"],["2026-02-10T09:19:06","d2000"],
+["2026-02-09T17:46:43","esc10"],["2026-02-09T17:46:38","d2000"],
+["2026-02-08T11:07:32","esc10"],["2026-02-08T11:07:16","d2000"],
+["2026-02-07T09:18:32","esc10"],["2026-02-07T09:18:26","d2000"],
+["2026-02-06T12:15:54","esc10"],["2026-02-06T12:15:49","d2000"],
+["2026-02-05T09:05:04","esc10"],["2026-02-05T09:04:57","d2000"],
+["2026-02-04T11:57:44","esc10"],["2026-02-04T11:57:37","d2000"],
+["2026-02-03T08:28:10","esc10"],["2026-02-03T08:28:03","d2000"],
+["2026-02-02T11:17:57","esc10"],["2026-02-02T11:17:50","d2000"],
+["2026-02-01T18:02:02","esc10"],["2026-02-01T18:01:58","d2000"],
+["2026-01-31T09:59:11","esc10"],["2026-01-31T09:59:06","d2000"],
+["2026-01-30T14:53:53","d2000"],["2026-01-30T14:53:53","esc10"],
+["2026-01-29T18:51:54","esc10"],
+["2026-01-28T09:22:44","esc10"],["2026-01-28T09:22:38","d2000"],
+["2026-01-27T09:08:53","esc10"],["2026-01-27T09:08:46","d2000"],
+["2026-01-26T08:43:15","esc10"],["2026-01-26T08:43:06","d2000"],
+["2026-01-25T15:25:17","esc10"],["2026-01-25T15:25:13","d2000"],
+["2026-01-24T10:46:24","esc10"],
+["2026-01-23T10:21:12","esc10"],["2026-01-23T11:01:03","d2000"],
+["2026-01-22T12:13:09","esc10"],
+["2026-01-21T10:57:25","esc10"],["2026-01-21T10:57:30","d2000"],
+["2026-01-20T15:10:06","esc10"],["2026-01-20T15:09:58","d2000"],
+["2026-01-19T07:37:56","esc10"],
+["2026-01-18T10:19:46","esc10"],
+["2026-01-17T10:32:01","esc10"],["2026-01-17T10:32:14","d2000"],
+["2026-01-16T09:05:54","esc10"],
+["2026-01-15T12:08:55","esc10"],["2026-01-15T12:09:01","d2000"],
+["2026-01-14T12:48:06","esc10"],["2026-01-14T12:48:10","d2000"],
+];
+
+// Format: ["YYYY-MM-DDTHH:MM:SS","title","C"]  C=P(personal)|A(comp-admin)|B(crafts-work)|M(misc)
+// Includes both recurring and one-off completions; no "Complete -" summaries; no URLs.
+const SEED_RLOG = [
+["2026-05-16T10:36:38","GPW","P"],
+["2026-05-15T11:55:53","CCCU payment","P"],["2026-05-15T11:53:30","Clean out fridge","P"],["2026-05-15T11:52:20","Vacuum (lite)","P"],["2026-05-15T11:51:29","Check Dort","P"],["2026-05-15T11:49:43","SEMBA membership directory email","B"],
+["2026-05-13T07:53:15","Mac desktop/downloads/documents","P"],
+["2026-05-12T23:30:19","Research 3:1 prep","A"],["2026-05-12T23:30:13","cssLOG","A"],["2026-05-12T12:10:27","Quip head - reschedule","P"],
+["2026-05-11T23:21:18","Tigers game plan","A"],["2026-05-11T15:06:35","Calendar/inboxes (CSS)","A"],["2026-05-11T12:12:22","SEMBA - MP winners board","B"],
+["2026-05-10T20:00:40","GPW","P"],["2026-05-10T20:00:05","SEMBA Party - wrap gifts","B"],["2026-05-10T19:59:34","Bridge candles","B"],
+["2026-05-08T23:21:32","Print SEMBA party sign-up sheet","B"],["2026-05-08T22:11:23","SEMBA Party - donation box","B"],["2026-05-08T22:11:33","SEMBA Party - cc's","B"],["2026-05-08T16:11:44","SEMBA Party - photos","B"],
+["2026-05-07T22:12:06","SEMBA Party - donation box","B"],["2026-05-07T11:16:06","IG ss's: April 13-June 13, 2025 (1 hrs)","P"],["2026-05-07T12:11:11","SEMBA Party - photos (0.5 hrs)","B"],["2026-05-07T12:10:46","SEMBA party drink tickets","B"],
+["2026-05-06T16:52:07","AAG 2025 lookups - organize (0.5 hrs)","A"],["2026-05-06T14:50:14","Bathrooms – soap, sink, toilet, towel, mirror, floor","P"],["2026-05-06T14:15:44","Trash/recycling","P"],["2026-05-06T14:11:28","SEMBA Party - cc's (0.5 hrs)","B"],["2026-05-06T13:25:07","TT Summer panel email - due June 20","B"],["2026-05-06T12:53:54","SEMBA membership directory pw","B"],["2026-05-06T12:51:59","Suit symbol frames","B"],["2026-05-06T11:06:24","Woodward BBQ catering followup","B"],["2026-05-06T11:58:03","DTE monthly","P"],["2026-05-06T11:16:54","Minneapolis plan","P"],["2026-05-06T11:09:34","SEMBA site - Feb meeting minutes","B"],["2026-05-06T10:06:58","Nielsen","P"],["2026-05-06T09:58:51","Lisbon maps/art frames - figure out","P"],["2026-05-06T09:57:09","Linen joggers","P"],["2026-05-06T09:57:01","Check Lowes payment","P"],
+["2026-05-05T18:55:11","Trash/recycling","P"],["2026-05-05T13:03:59","Paystub monthly","P"],["2026-05-05T12:51:02","Monthly finances: NW + budget review","P"],
+["2026-05-04T23:21:52","Send Ron all club manager contacts","B"],["2026-05-04T23:20:49","Forward air quality stuff to Jessica","P"],["2026-05-04T14:42:51","SEMBA AD report (1 hrs)","B"],["2026-05-04T12:38:29","New tab in HRI data dictionary sheet","A"],["2026-05-04T12:32:32","Follow up with Rickelle","A"],["2026-05-04T12:28:44","Research 3:1 prep","A"],["2026-05-04T12:10:58","SEMBA/D12 charity recipient","B"],["2026-05-04T11:08:27","Followup with Bailee SEMCOG","A"],["2026-05-04T11:06:14","Follow up with Mary Bednar","A"],["2026-05-04T11:03:04","Follow up with Catherine Cheung","A"],["2026-05-04T09:23:35","UMCU CD","P"],
+["2026-05-03T22:59:11","Calendar/inboxes (CSS)","A"],["2026-05-03T22:46:46","SEMBA site - member directory (3 hrs)","B"],["2026-05-03T21:42:00","Update partnership desk","A"],["2026-05-03T21:41:51","SEMBA party Paypal donation link","B"],["2026-05-03T21:41:21","SEMBA AD report (1 hrs)","B"],["2026-05-03T20:22:51","Email Nancy about Finders Foundry","A"],["2026-05-03T11:45:53","Cat litter","P"],
+["2026-05-02T22:10:18","SEMBA site - member directory (3 hrs)","B"],["2026-05-02T20:23:54","SEMBA newcomer game - check date, talk to Mike/Bob","B"],["2026-05-02T10:22:15","Slate new","P"],
+["2026-05-01T18:14:03","Bridge problem of the day calendar (1 hrs)","B"],["2026-05-01T15:17:28","Boost proposal draft review","A"],["2026-05-01T14:08:32","DTE payment","P"],["2026-05-01T14:06:54","UMCU payment","P"],["2026-05-01T14:04:43","Synchrony payments","P"],["2026-05-01T14:03:31","Woodward BBQ catering followup","B"],["2026-05-01T14:00:53","Al - interviewee payments + interviewer training","A"],
+["2026-04-30T16:52:59","SEMBA letters (1 hrs)","B"],["2026-04-30T13:24:16","Lauren Fedex receipt","A"],["2026-04-30T11:00:31","Ashton mini GIS project on JC canals","A"],["2026-04-30T09:26:34","5/5/5 (summary + new contacts)","B"],["2026-04-30T08:38:50","Indyx - log 1 item","P"],
+["2026-04-29T22:52:50","Pact tees","M"],["2026-04-29T22:41:42","Centerwell pharmacy","M"],["2026-04-29T22:39:13","S&S","P"],["2026-04-29T22:26:47","Where we are on written products","A"],["2026-04-29T11:22:04","Haircut","P"],
+["2026-04-28T14:51:09","5/5/5 (current + new contacts)","B"],["2026-04-28T14:32:52","Discover payment","P"],["2026-04-28T14:32:18","BOA Payment","P"],["2026-04-28T14:31:11","Target card payment","P"],["2026-04-28T14:31:02","Chase payments","P"],["2026-04-28T12:18:33","Slate new","P"],["2026-04-28T12:18:28","Research 3:1 prep","A"],
+["2026-04-27T23:58:44","Party doc","M"],["2026-04-27T22:36:42","Email Katie task force materials - postcard + slides","A"],["2026-04-27T22:03:39","Citi payment","P"],["2026-04-27T22:02:50","Amex payment","P"],["2026-04-27T15:26:09","Landing page updates","A"],["2026-04-27T14:51:30","Spring TT email","B"],["2026-04-27T13:57:02","WF payment","P"],["2026-04-27T13:51:26","cssLOG","A"],["2026-04-27T13:17:43","Refund for card table?","B"],
+["2026-04-21T14:38:47","Return decibel meter?","P"],["2026-04-21T14:38:20","5/5/5 mid-month check","B"],["2026-04-21T14:35:41","SEMCOG task force materials - students?","A"],["2026-04-21T09:27:41","SEMBA membership (stats, transactions, 5/5/5 current)","B"],["2026-04-21T08:43:33","Couch pillows/blankets","P"],
+["2026-04-20T15:09:18","CSS timesheet","A"],["2026-04-20T15:04:03","Calendar/inboxes (Personal)","P"],["2026-04-20T14:29:42","Vistaprint - SEMBA t-shirts","P"],["2026-04-20T14:27:29","SEMBA letters (1 hrs)","B"],["2026-04-20T13:35:35","EM Colloqium register","A"],["2026-04-20T12:28:25","A2 expense reimbursement","B"],["2026-04-20T11:43:40","A2 cash deposit","B"],["2026-04-20T09:50:36","Water softener buy","P"],["2026-04-20T09:50:29","Sheets/towels","P"],["2026-04-20T09:23:21","Jalonne W-N followup","A"],["2026-04-20T08:50:01","TT - Spring (3 hrs)","B"],
+["2026-04-19T16:38:47","Vacuum (lite)","P"],
+["2026-04-18T16:54:58","SEMBA letters (1 hrs)","B"],["2026-04-18T15:10:03","Bedroom clothes - one chunk","P"],["2026-04-18T13:08:47","ATC/CSJ","P"],["2026-04-18T13:05:51","GPW","P"],["2026-04-18T13:05:08","CCCU payment","P"],
+["2026-04-17T22:51:56","Cat litter","P"],["2026-04-17T18:56:16","Cat claws","P"],
+["2026-04-16T23:05:12","Slate new","P"],["2026-04-16T10:52:38","Table Talk - Spring to edits","B"],["2026-04-16T10:51:15","TT - Spring (3 hrs)","B"],
+["2026-04-15T02:53:10","TT - Spring (3 hrs)","B"],
+["2026-04-14T12:54:14","SEMBA party - registration online + put in TT","B"],["2026-04-14T12:53:06","TT - Spring (3 hrs)","B"],["2026-04-14T10:50:17","Calendar/inboxes (CSS)","A"],["2026-04-14T10:14:33","Bedroom clothes - one chunk","P"],["2026-04-14T10:12:38","Slate new","P"],["2026-04-14T10:12:24","Check Dort","P"],["2026-04-14T10:08:53","Earl 1:1 prep","A"],
+["2026-04-13T14:43:59","EM survey methodology (1 hrs)","A"],["2026-04-13T13:09:53","SEMBA - website partnership bulletin board (3 hrs)","B"],
+["2026-04-08T10:16:42","Vacuum (lite)","P"],
+["2026-04-07T07:53:28","Slate new","P"],
+["2026-04-06T11:05:05","Call Jane Gardner re tables on 4/8","B"],
+["2026-04-03T10:53:38","GPW","P"],
+["2026-04-02T14:43:39","GG - Identify first 3 maps (1 hrs)","A"],
+["2026-04-01T22:09:09","DTE monthly","P"],
+["2026-03-31T18:59:13","Slate new","P"],["2026-03-31T18:59:07","DSC new","P"],["2026-03-31T10:27:20","Mac screenshots","P"],
+["2026-03-30T16:41:50","Calendar/inboxes (CSS)","A"],["2026-03-30T14:44:15","Trainings - reset, chunk, schedule (1 hrs)","A"],["2026-03-30T11:59:30","Vacuum (lite)","P"],
+["2026-03-29T17:23:01","Vacuum (full)","P"],
+["2026-03-28T14:44:20","Trainings - reset, chunk, schedule (1 hrs)","A"],
+["2026-03-27T21:57:46","Slate new","P"],["2026-03-27T13:45:01","Ikea bedroom shelf","P"],["2026-03-27T13:12:50","SEMBA - website partnership bulletin board (3 hrs)","B"],["2026-03-27T12:57:53","Landing page updates","A"],["2026-03-27T12:39:16","Calendar/inboxes (Personal)","P"],["2026-03-27T12:23:44","GPW","P"],
+["2026-03-26T13:42:21","Respond to Katie","A"],
+["2026-03-25T20:22:04","WF payment","P"],["2026-03-25T17:16:23","Collaborate with SEMCOG to recruit participants (1 hrs)","A"],["2026-03-25T14:36:20","GG - Identify first 3 maps (1 hrs)","A"],["2026-03-25T11:12:45","SEMBA - website partnership bulletin board (3 hrs)","B"],
+["2026-03-24T20:22:11","Cat litter","P"],
+["2026-03-23T11:37:52","Research 3:1 prep","A"],
+["2026-03-22T21:14:44","CSS timesheet","A"],
+["2026-03-21T22:12:21","SEMBA - website partnership bulletin board (3 hrs)","B"],
+["2026-03-20T11:54:27","GPW","P"],
+["2026-03-16T12:19:43","Calendar/inboxes (Personal)","P"],["2026-03-16T12:06:12","Katie Grantham meeting times","A"],["2026-03-16T10:49:00","Research 3:1 prep","A"],
+["2026-03-15T14:36:25","GG - Identify first 3 maps (1 hrs)","A"],
+["2026-03-14T22:45:46","BTF Kellogg/Health equity research","A"],["2026-03-14T22:09:55","A2 tournament tables plan","B"],["2026-03-14T01:13:30","Vacancy/Displacements lit review outline","A"],
+["2026-03-13T12:18:54","USPS Gateway - bulk mail permit online","B"],
+["2026-03-12T01:48:57","CAEL 3/27 workforce webinar register","A"],["2026-03-12T01:16:24","Aggy dentist appt","P"],
+["2026-03-11T14:09:37","Earl 1:1 prep","A"],
+["2026-03-08T22:21:58","Monthly finances: NW + budget review","P"],["2026-03-08T21:19:11","Landing page updates","A"],["2026-03-08T21:01:58","SEMBA party - save the date","B"],["2026-03-08T19:36:01","S&S","P"],["2026-03-08T19:35:07","CSCI LoS - draft","A"],["2026-03-08T19:34:44","CSCI writing","A"],["2026-03-08T19:24:42","Mac screenshots","P"],
+["2026-03-06T15:26:45","Citi payment","P"],["2026-03-06T15:26:45","Discover payment","P"],["2026-03-06T15:26:45","Target card payment","P"],["2026-03-06T15:26:45","Chase payments","P"],["2026-03-06T15:26:45","BOA Payment","P"],
+["2026-02-28T12:54:55","SEMBA letters (1 hrs)","B"],["2026-02-28T10:39:05","UMCU payment","P"],
+["2026-02-27T12:54:46","SEMBA letters (1 hrs)","B"],["2026-02-27T12:37:46","GPW","P"],["2026-02-27T12:26:03","A/L photos","P"],
+["2026-02-26T12:54:43","SEMBA letters (1 hrs)","B"],
+["2026-02-24T22:11:11","Calendar/inboxes (CSS)","A"],["2026-02-24T10:13:28","Indyx - log 1 item","P"],["2026-02-24T09:39:22","WF payment","P"],
+["2026-02-23T00:00:00","Candied orange peel","P"],
+["2026-02-22T12:01:17","Vacuum (full)","P"],["2026-02-22T11:07:53","Synchrony payments","P"],["2026-02-22T11:00:47","Slate new","P"],["2026-02-22T00:00:00","Juices","P"],["2026-02-22T00:00:00","Clean kitchen","P"],
+["2026-02-21T20:17:08","Boyne Reservation","P"],
+["2026-02-20T12:21:46","User folder sort Pt II","A"],["2026-02-20T11:47:46","Bedroom clothes - one chunk","P"],["2026-02-20T11:47:38","Schedule Slate orders - not subscription","P"],["2026-02-20T11:29:51","Schedule DSC orders - not subscription","P"],["2026-02-20T11:25:09","Check SF monthly payment","P"],["2026-02-20T11:16:29","Check Costco auto renewal","P"],["2026-02-20T10:56:02","GPW","P"],
+["2026-02-19T18:53:59","Cat litter","P"],["2026-02-19T12:37:22","Fireplace","P"],["2026-02-19T12:34:24","SEMBA party - entertainment (photo booth, caricature)","B"],["2026-02-19T12:31:58","SEMBA party - food/booze","B"],["2026-02-19T12:31:53","SEMBA party - decoration","B"],["2026-02-19T11:29:35","BBO (100)","B"],["2026-02-19T11:27:52","CSS timesheet","A"],["2026-02-19T11:21:52","Check MIDAS PODS grants for KIDS","A"],["2026-02-19T11:20:14","UM dog Sasha","P"],["2026-02-19T10:45:39","Insurance claim","P"],
+["2026-02-18T22:29:04","Gel nails light blue","P"],["2026-02-18T21:20:50","Peacock bundle login","P"],["2026-02-18T14:00:04","Bedroom clothes - one chunk","P"],["2026-02-18T13:54:28","Trophy plaque pickup","B"],["2026-02-18T13:00:09","Toby/Angela care package","P"],
+["2026-02-17T18:00:43","Calendar/inboxes (Personal)","P"],["2026-02-17T12:38:52","Call DTE re power surge","P"],["2026-02-17T12:37:45","Email Katie for Current Land use map","A"],["2026-02-17T12:19:16","Calendar/inboxes (CSS)","A"],["2026-02-17T12:19:06","TT Spring panel last call (48 hrs)","B"],["2026-02-17T10:51:31","KIDS narrative; LOI sections draft; budget","A"],["2026-02-17T10:51:25","KIDS narrative cleanup (Brandon)","A"],["2026-02-17T10:46:08","Order ink","P"],["2026-02-17T10:28:49","5/5/5 mid-month check","B"],["2026-02-17T10:25:18","Schmidt - Doreen/Lisa/timeline","A"],["2026-02-17T10:22:28","restock mini bag","P"],["2026-02-17T10:22:05","Research 3:1 prep","A"],
+["2026-02-16T21:11:54","Al - Shoshana email","A"],["2026-02-16T20:49:04","ATC/CSJ","P"],["2026-02-16T17:59:57","Poshmark/BNT/Bulk mail - guest room - 1","P"],
+["2026-02-15T15:08:54","SEMBA party - May 9, check with Mike M","B"],["2026-02-15T09:05:33","GPW","P"],
+["2026-02-14T20:06:44","Cat litter","P"],
+["2026-02-12T09:17:22","Check Dort","P"],
+["2026-02-11T22:49:59","Diya - case study example/template","A"],["2026-02-11T22:22:48","Vacuum (lite)","P"],["2026-02-11T22:22:40","Haircut","P"],["2026-02-11T20:35:44","Trash/recycling","P"],["2026-02-11T20:33:59","SEMBA - Trenton club directory location + TT","B"],["2026-02-11T20:22:23","TT - how to run for board; responsibilities","B"],["2026-02-11T20:07:22","Rocket budgeting","P"],["2026-02-11T17:12:28","Bedroom clothes - one chunk","P"],["2026-02-11T17:11:48","Consolidate subscription payments part 2","P"],["2026-02-11T15:00:46","Test unit256.org forwarding on all browsers","B"],["2026-02-11T15:00:39","SEMBA - trophy plaques","B"],["2026-02-11T13:34:50","SEMBA site tournament calendar","B"],
+["2026-02-10T22:50:44","Cat breakaway collars","P"],["2026-02-10T22:50:35","Organize shared drive user folder Pt I","A"],["2026-02-10T16:35:34","Schmidt - MIDAS inquiry","A"],["2026-02-10T16:16:03","Capstone Bunting Labs write-up","A"],["2026-02-10T16:12:59","Calendar/inboxes (Personal)","P"],["2026-02-10T16:04:47","SEMBA - 5/5/5 from bod mtg","B"],["2026-02-10T16:00:51","SEMBA - Ken Van Cleve photos","B"],["2026-02-10T15:57:13","SEMBA Jan tournament flyer/results archive","B"],["2026-02-10T14:07:34","SEMBA site - index","B"],["2026-02-10T13:41:05","SEMBA - generate insurance for Jan, Feb, April","B"],["2026-02-10T12:54:19","SEMBA - $100 for laminated cheatsheets","B"],["2026-02-10T12:19:49","Calendar/inboxes (CSS)","A"],["2026-02-10T12:19:37","Earl 1:1 prep","A"],["2026-02-10T10:17:19","ACBL Tournament insurance - June, Spook","B"],["2026-02-10T10:10:09","Make - 50 beginner cheatsheets","B"],["2026-02-10T09:34:16","Indyx - log 1 item","P"],
+["2026-02-09T19:36:56","SEMBA site feature article","B"],["2026-02-09T19:13:36","SIF UM submission","A"],["2026-02-09T15:34:16","Print AD report (16)","B"],["2026-02-09T14:50:39","SIF revisions","A"],["2026-02-09T10:28:44","Research 3:1 prep","A"],["2026-02-09T00:36:02","JEM code + outputs for analysis questions","A"],["2026-02-09T00:35:52","JEM Codebook","A"],["2026-02-09T00:35:19","ACBL remittance log","B"],["2026-02-09T00:27:23","SEMBA reimbursement - Jan 23","B"],["2026-02-09T00:10:18","SEMBA AD report","B"],["2026-02-09T00:10:11","Make - 150 club directory bookmarks","B"],
+["2026-02-08T21:50:26","SEMBA site member achievements - better formatting","B"],["2026-02-08T21:50:20","SEMBA site member achievements - update","B"],["2026-02-08T13:11:06","SEMBA membership (stats, transactions, 5/5/5 current)","B"],["2026-02-08T13:10:05","SEMBA site past three months - Member updates page","B"],["2026-02-08T11:47:23","SEMBA insurance for all tournaments","B"],
+["2026-02-07T10:18:52","GPW","P"],
+["2026-02-06T11:24:32","Gel nails light blue","P"],
+["2026-02-05T23:26:21","Capstone QGIS write-up","A"],["2026-02-05T22:44:21","Vacuum (lite)","P"],["2026-02-05T09:13:45","Poshmark/BNT/Bulk mail - guest room - 1","P"],["2026-02-05T07:42:03","SEMBA newcomer game date","B"],["2026-02-05T07:41:48","Katie - coastal/wetland change; April 29 flooding task force","A"],
+["2026-02-04T23:02:41","KIDS Joyce budget/justification","A"],["2026-02-04T22:58:41","DTE monthly","P"],["2026-02-04T21:19:30","OECD p.46-48 = JEM data quality standards","A"],["2026-02-04T18:00:03","Print cat prescriptions","P"],["2026-02-04T17:57:43","SEMBA Spring Party planning - initial thoughts","B"],["2026-02-04T12:55:39","Sandy Mullie envelopes","P"],["2026-02-04T12:54:48","Bedroom clothes - one chunk","P"],["2026-02-04T12:54:43","Sandy Mullie labels","P"],["2026-02-04T12:54:38","Clean out fridge","P"],["2026-02-04T11:31:24","KIDS followups (effort, Alyssa, CEDER)","A"],["2026-02-04T11:17:14","Cat litter","P"],
+["2026-02-03T17:09:28","KIDS water workforce - adapt from SIF","A"],["2026-02-03T14:18:12","Capstone - Zotero group library","A"],
+["2026-02-02T14:12:02","NW","P"],["2026-02-02T14:01:33","cssLOG","A"],["2026-02-02T13:56:29","Chase payments","P"],["2026-02-02T13:56:22","S&S","P"],["2026-02-02T13:48:28","Target card payment","P"],["2026-02-02T13:47:58","Amex payment","P"],["2026-02-02T13:46:56","Citi payment","P"],["2026-02-02T13:46:07","Discover payment","P"],["2026-02-02T13:22:33","Calendar/inboxes (Personal)","P"],["2026-02-02T13:22:27","Calendar/inboxes (CSS)","A"],["2026-02-02T12:53:11","Springer peer review - Human Ecology","A"],["2026-02-02T11:58:50","Research 3:1 prep","A"],["2026-02-02T11:57:14","Cecilia for Goodwill email","B"],["2026-02-02T11:40:20","5/5/5 (summary + new contacts)","B"],["2026-02-02T11:17:36","Quip head - reschedule","P"],
+["2026-02-01T23:29:06","Indyx - log 1 item","P"],["2026-02-01T17:41:19","GPW","P"],
+["2026-01-29T18:51:57","Andy/Ravi email check in","A"],["2026-01-29T15:02:58","Paystub monthly","P"],["2026-01-29T10:59:05","CSCI - notes for Lauren/Brad + meeting","A"],
+["2026-01-28T23:08:14","Slate replacement","P"],["2026-01-28T22:58:11","NABC flight/hotel","B"],["2026-01-28T22:56:40","Evvy care 2","P"],["2026-01-28T22:50:37","Vacuum (lite)","P"],["2026-01-28T22:50:30","Headshots","A"],["2026-01-28T19:57:34","5/5/5 (current + new contacts)","B"],["2026-01-28T19:45:54","Chicago hotel","B"],["2026-01-28T19:01:37","Known Supply return envelope - figure out","P"],["2026-01-28T13:59:16","Cat claws","P"],
+["2026-01-27T20:39:14","GGVI Matrix","A"],["2026-01-27T12:42:51","SEMBA membership (stats, transactions, 5/5/5 current)","B"],["2026-01-27T09:08:39","Water softener refill","P"],["2026-01-27T09:08:24","Cat litter","P"],["2026-01-27T07:50:24","Research 3:1 prep","A"],
+["2026-01-26T17:28:49","HSP Robin Aire invoice","P"],["2026-01-26T17:28:45","Make granola mix for home+work","P"],["2026-01-26T17:28:40","Zotero - dropbox","A"],["2026-01-26T12:22:28","Bedroom clothes - one chunk","P"],["2026-01-26T12:20:28","Calendar/inboxes (Personal)","P"],["2026-01-26T12:19:54","Synchrony payments","P"],["2026-01-26T12:18:41","Calendar/inboxes (CSS)","A"],["2026-01-26T07:51:19","Quip replacement","P"],["2026-01-26T07:50:33","CSS address labels","A"],
+["2026-01-25T17:37:13","Shredded cheese blocks","P"],["2026-01-25T17:12:42","Indyx - log 1 item","P"],["2026-01-25T17:04:46","GG timeline doc tasks - schedule","A"],["2026-01-25T16:40:53","Google wallet/pay","P"],["2026-01-25T16:40:02","Inbox settings/spam","P"],["2026-01-25T16:30:53","Consolidate subscription payments part 1","P"],
+["2026-01-24T14:41:56","Consider budget re: subscriptions","P"],["2026-01-24T13:49:08","Map all subscriptions","P"],["2026-01-24T12:53:42","SEMBA site - in memoriam","B"],["2026-01-24T11:37:26","IG ss's - schedule","M"],["2026-01-24T10:56:58","Andes gifts gloves","P"],["2026-01-24T10:48:42","WF payment","P"],["2026-01-24T10:46:17","Fireplace","P"],
+["2026-01-23T10:27:34","Email Katie (SEMCOG) - practitioner interviews","A"],["2026-01-23T10:21:24","Water softener buy","P"],["2026-01-23T06:41:19","GPW","P"],
+["2026-01-22T13:22:48","JEM - reset, chunk, schedule","A"],["2026-01-22T13:07:51","Bunting Labs Demo - use plugin and schedule","A"],["2026-01-22T12:36:24","Diya abstract","A"],["2026-01-22T11:59:22","CCCU HOI declarations page","P"],["2026-01-22T05:33:26","TT - Spring membership, tournament results","B"],["2026-01-22T04:30:34","Matrix app - steps 1-3","P"],["2026-01-22T03:55:31","MI Fam Medicine message portal","P"],
+["2026-01-21T22:58:05","Candle jars","P"],["2026-01-21T22:58:00","Kitchen","P"],["2026-01-21T21:44:16","Finish laundry","P"],["2026-01-21T21:44:00","Pedi (gel)","P"],["2026-01-21T21:43:23","Couch pillows/blankets","P"],["2026-01-21T13:57:44","SEMBA digital archive - schedule","B"],["2026-01-21T13:50:03","Bunting Labs Demo - install plugin","A"],["2026-01-21T13:45:53","Ask Ron/John about writers/editors from mba/semba","B"],["2026-01-21T13:27:53","CCCU savings","P"],["2026-01-21T12:59:49","Vet forms","P"],["2026-01-21T12:04:48","Cat litter","P"],["2026-01-21T11:34:11","Ari email - depaul MBA business analytics","B"],["2026-01-21T11:10:48","Schedule doc appt","P"],["2026-01-21T11:06:26","Insurance nutritionist","P"],["2026-01-21T11:05:36","BBO (100)","B"],
+["2026-01-20T16:04:31","CCCU response","P"],["2026-01-20T15:14:19","ADT basement sensor","P"],["2026-01-20T15:10:12","Email Sandy for Weds/Thurs visit","P"],["2026-01-20T15:09:30","Research 3:1 prep","A"],["2026-01-20T15:08:44","SIF Form 2 - draft","A"],
+["2026-01-18T01:03:20","Indyx - log 1 item","P"],
+["2026-01-17T10:33:59","GGVI Matrix","A"],
+["2026-01-16T20:28:04","TT - Spring Format/ideate","B"],["2026-01-16T11:00:05","SIF research design, narrative, budget","A"],["2026-01-16T08:31:02","Calendar/inboxes (Personal)","P"],["2026-01-16T07:57:33","Calendar/inboxes (CSS)","A"],["2026-01-16T07:45:15","CSS timesheet","A"],["2026-01-16T07:43:12","Ping Marie (ECN) re CSCI","A"],["2026-01-16T07:23:16","Cat claws","P"],["2026-01-16T06:10:09","GPW","P"],["2026-01-16T06:08:35","Make sub-category drop-down","P"],["2026-01-16T06:08:29","Evvy care 1","P"],
+["2026-01-15T20:00:49","GI survey geocoding - reset, chunk, schedule","A"],["2026-01-15T19:28:22","OECD/Census API/GGVI wiki for SEAS students","A"],["2026-01-15T19:04:19","GGVI Matrix","A"],["2026-01-15T13:00:34","Al - SIF WW partner email for Goodwill","A"],["2026-01-15T07:43:10","Nails","P"],
+["2026-01-14T21:13:30","Bathrooms - soap, sink, toilet, towel, mirror, floor","P"],["2026-01-14T20:53:29","AAG 2025 lookups - record","A"],["2026-01-14T18:10:18","Update Lisa/Makeda on ending SEAS short code","A"],["2026-01-14T17:07:44","SIF Form 1 - submission","A"],["2026-01-14T14:52:47","Kitchen","P"],["2026-01-14T12:56:24","SEMBA Nov meeting followups - schedule","B"],["2026-01-14T12:44:15","Landing page updates","A"],["2026-01-14T12:37:49","SEAS MP Agenda/timeline for 1/15 mtg","A"],["2026-01-14T11:36:24","Vacancy/displacement + economics lit review","A"],["2026-01-14T10:37:20","5/5/5 mid-month check","B"],["2026-01-14T10:36:03","SEMBA Nov member mtg updates","B"],["2026-01-14T10:34:02","SEMBA site - things listed in last AD report","B"],["2026-01-14T09:54:30","Vacuum (lite)","P"],["2026-01-14T09:54:17","Trash/recycling","P"],["2026-01-14T09:26:49","Smoke detector batteries - basement","P"],["2026-01-14T09:26:41","Smoke detector batteries - kitchen","P"],["2026-01-14T09:04:09","Mouse bait stations/peppermint oil","P"],["2026-01-14T08:33:28","ATC/CSJ","P"],["2026-01-14T08:33:22","Cat litter","P"],["2026-01-14T08:24:34","Matrix - Round 2 load","P"],
+["2026-01-13T20:57:40","Email Doreen SIF","A"],["2026-01-13T20:57:32","SIF Earl edits","A"],["2026-01-13T14:48:38","Zotero collection cleanup","A"],["2026-01-13T14:10:27","Respond to Sara re Zotero","A"],["2026-01-13T14:10:25","Zotero + Google Drive","A"],["2026-01-13T12:50:03","Update 3:1 and 1:1 SIF form drafts","A"],["2026-01-13T12:49:55","Doreen to Joyce Fluxx/program officer discussion","A"],["2026-01-13T12:36:52","2026 Grant/effort timeline","A"],
+["2026-01-12T22:18:37","TT hand - Eschewing the finesse","B"],["2026-01-12T21:32:48","Calendar/inboxes (Personal)","P"],["2026-01-12T20:57:04","EZ pass cc","P"],["2026-01-12T13:09:33","Calendar/inboxes (CSS)","A"],["2026-01-12T12:52:42","GWK tour waiver/release form","A"],["2026-01-12T12:51:32","Review KIDS lit review outline","A"],["2026-01-12T12:05:47","HOI Claim for surge - Furnace blower, generator","P"],["2026-01-12T11:23:23","Call State Farm re power surge","P"],["2026-01-12T11:17:21","Quit Claim Deed form + email to MP","P"],["2026-01-12T10:19:05","Call Oakland Co re: home title","P"],
+["2026-01-11T22:50:20","SEAS MP timeline - draft","A"],["2026-01-11T22:50:14","Catalyst grant timeline - draft","A"],["2026-01-11T22:35:54","Research 3:1 prep","A"],["2026-01-11T22:35:43","SIF form 1 - draft","A"],["2026-01-11T22:35:26","Earl 1:1 prep","A"],["2026-01-11T22:01:15","Email Sho/Jessica to connect","A"],["2026-01-11T20:36:39","Email Al WW partner question","A"],
+["2026-01-09T17:27:21","Indyx - log 1 item","P"],["2026-01-09T17:20:34","Check Dort","P"],["2026-01-09T17:19:19","Kurt TT panel text","B"],["2026-01-09T16:00:20","Cat litter","P"],["2026-01-09T15:54:43","Bombas","P"],["2026-01-09T14:47:09","SEMBA site - Aug meeting minutes","B"],["2026-01-09T14:38:46","Respond to John Lewis","A"],["2026-01-09T14:34:40","SEAS MP when2meet","A"],["2026-01-09T14:34:31","Email M&P about title","P"],["2026-01-09T14:28:17","Repond to Jack about Novi water tour","A"],["2026-01-09T14:22:19","Respond to Marty","B"],["2026-01-09T14:09:04","Matrix - Round 1 load","P"],["2026-01-09T11:01:45","Evvy shipping","P"],["2026-01-09T11:01:37","Neighbor package pickup","P"],["2026-01-09T08:58:20","Evvy","P"],["2026-01-09T07:28:54","GPW","P"],
+["2026-01-08T21:23:17","Full Throttle passes","P"],["2026-01-08T21:09:16","Call KPOT for Sat","P"],["2026-01-08T21:09:10","Call Full Throttle for Sat","P"],
+["2026-01-07T00:00:00","Kallax bin handles","P"],["2026-01-07T00:00:00","Vacuum (lite)","P"],["2026-01-07T00:00:00","Clean out fridge","P"],["2026-01-07T00:00:00","State Farm PIP","P"],["2026-01-07T00:00:00","TT Spring panel email - due Feb 12","B"],["2026-01-07T00:00:00","Trash/recycling","P"],["2026-01-07T00:00:00","SEMBA roster for trophies","B"],["2026-01-07T00:00:00","Cat litter","P"],
+["2026-01-06T00:00:00","Email Marie ECN CSCI grant","A"],["2026-01-06T00:00:00","Keep lists","P"],["2026-01-06T00:00:00","A/L photos","P"],["2026-01-06T00:00:00","Email Makeda asking","A"],["2026-01-06T00:00:00","Email Katie Grantham SEMCOG re Catalyst","A"],["2026-01-06T00:00:00","Email Sara re Zotero","A"],["2026-01-06T00:00:00","KIDS scratch budget w/ 2 postdocs","A"],["2026-01-06T00:00:00","Springer peer review - check credentials","A"],
+["2026-01-05T00:00:00","KIDS postdoc description","A"],["2026-01-05T00:00:00","Simply Recycling prep","P"],["2026-01-05T00:00:00","A2 Flyer to Irv","B"],["2026-01-05T00:00:00","Research 3:1 prep","A"],["2026-01-05T00:00:00","Calendar/inboxes (CSS)","A"],["2026-01-05T00:00:00","Calendar/inboxes (Personal)","P"],["2026-01-05T00:00:00","cssLOG","A"],
+["2026-01-04T00:00:00","CVS pickup","P"],["2026-01-04T00:00:00","Schedule vaccines for 1/14","P"],["2026-01-04T00:00:00","UMCU payment","P"],["2026-01-04T00:00:00","Discover payment","P"],["2026-01-04T00:00:00","BoA payment","P"],["2026-01-04T00:00:00","Citi payment","P"],["2026-01-04T00:00:00","Amex payment","P"],["2026-01-04T00:00:00","Chase payments","P"],["2026-01-04T00:00:00","Target card payment","P"],["2026-01-04T00:00:00","Synchrony payments","P"],["2026-01-04T00:00:00","Cat claws","P"],
+["2026-01-03T00:00:00","Garage","P"],["2026-01-03T00:00:00","GPW","P"],["2026-01-03T00:00:00","Monthly finances: NW + budget review","P"],["2026-01-03T00:00:00","DTE monthly","P"],["2026-01-03T00:00:00","Paystub monthly","P"],["2026-01-03T00:00:00","5/5/5 (summary + new contacts)","B"],["2026-01-03T00:00:00","S&S","P"],
+];
+
+// cat code → category id
+const RLOG_CAT = {P:'personal',A:'comp-admin',B:'crafts-work',M:'misc'};
+
+function seedLog() {
+  SEED_MEDLOG.forEach(([ts, medId]) => {
+    medLogs.push({id:newId(), medId, takenAt: ts});
+  });
+  SEED_RLOG.forEach(([ts, title, catCode]) => {
+    recurLog.push({id:newId(), taskId:null, title, completedAt: ts, cat: RLOG_CAT[catCode]||'misc'});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STORAGE
+// ═══════════════════════════════════════════════════════════
+
+function save() {
+  try {
+    localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
+    localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
+    localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
+    localStorage.setItem('tm_settings', JSON.stringify(settings));
+    localStorage.setItem('tm_plate',    JSON.stringify(plate));
+    localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
+  } catch(e){}
+  // Cloud sync (no-op if not signed in)
+  if (_db && _currentUser) {
+    _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
+      .set({tasks, medLogs, recurLog, settings, plate, ctx}).catch(()=>{});
+  }
+}
+
+function load() {
+  try {
+    tasks    = JSON.parse(localStorage.getItem('tm_tasks')   ||'[]');
+    medLogs  = JSON.parse(localStorage.getItem('tm_mlogs')  ||'[]');
+    recurLog = JSON.parse(localStorage.getItem('tm_rlog')   ||'[]');
+    settings = JSON.parse(localStorage.getItem('tm_settings')||'{"seasonalMeds":{"bloom":false}}');
+    plate    = JSON.parse(localStorage.getItem('tm_plate')  ||'{"date":"","ids":[]}');
+    ctx      = JSON.parse(localStorage.getItem('tm_ctx')    ||'{"date":"","time":null,"energy":null}');
+    const today = todayStr();
+    if (plate.date!==today) plate={date:today,ids:[]};
+    if (ctx.date  !==today) ctx  ={date:today,time:null,energy:null};
+    if (!localStorage.getItem('tm_seeded') && tasks.length===0) {
+      tasks = seedTasks();
+      localStorage.setItem('tm_seeded','1');
+      save();
+    }
+    if (!localStorage.getItem('tm_log_seeded_v2')) {
+      medLogs=[]; recurLog=[];
+      seedLog();
+      localStorage.setItem('tm_log_seeded_v2','1');
+      save();
+    }
+  } catch(e) {
+    tasks=[];medLogs=[];recurLog=[];settings={seasonalMeds:{bloom:false}};
+    plate={date:todayStr(),ids:[]};ctx={date:todayStr(),time:null,energy:null};
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MEDS
+// ═══════════════════════════════════════════════════════════
+
+const medActive     = id => { const m=getmed(id); return m&&(m.type!=='seasonal'||!!(settings.seasonalMeds||{})[id]); };
+const medTakenToday   = id => medLogs.some(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&!l.skipped);
+const medSkippedToday = id => medLogs.some(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&l.skipped);
+const medLastTime     = id => { const ls=medLogs.filter(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&!l.skipped); return ls.length?ls[ls.length-1].takenAt:null; };
+
+function toggleMed(medId) {
+  const m=getmed(medId); if(!m) return;
+  if(!medActive(medId)&&m.type==='seasonal'){showToast(`${m.name} is seasonal — enable in ⚙ settings`);return;}
+  const takenIdx  =medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&!l.skipped);
+  const skippedIdx=medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&l.skipped);
+  if(takenIdx!==-1){
+    medLogs.splice(takenIdx,1); showToast(`${m.name} cleared`);
+  } else {
+    if(skippedIdx!==-1) medLogs.splice(skippedIdx,1);
+    medLogs.push({id:newId(),medId,takenAt:new Date().toISOString()});
+    showToast(`${m.name} logged ✓`);
+  }
+  save(); if(curView==='brief') rv();
+}
+
+function skipMed(medId) {
+  const m=getmed(medId); if(!m) return;
+  const takenIdx  =medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&!l.skipped);
+  const skippedIdx=medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&l.skipped);
+  if(skippedIdx!==-1){
+    medLogs.splice(skippedIdx,1); showToast(`${m.name} cleared`);
+  } else {
+    if(takenIdx!==-1) medLogs.splice(takenIdx,1);
+    medLogs.push({id:newId(),medId,takenAt:new Date().toISOString(),skipped:true});
+    showToast(`${m.name} skipped`);
+  }
+  save(); if(curView==='brief') rv();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TASKS
+// ═══════════════════════════════════════════════════════════
+
+function addTask(d) {
+  const isRecur = !!d.recurrence;
+  const firstDue = d.deadline || (isRecur ? todayStr() : null);
+  tasks.push({
+    id:newId(), title:d.title, category:d.category||'misc',
+    time:d.time||'medium', effort:d.effort||'medium',
+    deadline: isRecur ? null : (d.deadline||null),
+    recurrence: d.recurrence||null,
+    nextDue: isRecur ? firstDue : null,
+    chunks: d.chunks&&d.chunks.length ? d.chunks : null,
+    createdAt:new Date().toISOString(), completedAt:null,
+  });
+  save();
+}
+
+function doCompleteRecur(id, nextDue) {
+  const t=tasks.find(x=>x.id===id); if(!t) return;
+  recurLog.push({id:newId(), taskId:id, title:t.title, completedAt:new Date().toISOString()});
+  t.nextDue=nextDue;
+  if(t.chunks) t.chunks.forEach(c=>c.completedAt=null);
+  plate.ids=plate.ids.filter(x=>x!==id);
+  save(); closeCompleteRecurModal();
+  showToast(`Logged ✓ — next: ${fmtNextDue(nextDue)}`);
+  rv();
+}
+
+function closeCompleteRecurModal(){const el=document.getElementById('recur-modal');if(el)el.remove();}
+
+function openCompleteRecurSheet(id) {
+  if(document.getElementById('recur-modal')) return;
+  const t=tasks.find(x=>x.id===id); if(!t||!t.recurrence) return;
+
+  const fixedBase  = t.nextDue || todayStr();
+  const fixedNext  = calcNextDue(t.recurrence, fixedBase);
+  const rollingNext= calcNextDue(t.recurrence, todayStr());
+
+  const optHtml = (label, ds, accent) => {
+    const d=daysUntil(ds);
+    const rel=d===0?'today':d===1?'tomorrow':`in ${d} days`;
+    return `<button class="recur-opt" data-a="confirm-recur" data-id="${id}" data-next="${ds}">
+      <span class="recur-opt-lbl" style="${accent?'color:var(--accent)':''}">${label}</span>
+      <span class="recur-opt-date">${fmtDateFull(ds)}</span>
+      <span class="recur-opt-rel">${rel}</span>
+    </button>`;
+  };
+
+  const el=document.createElement('div');
+  el.id='recur-modal'; el.className='modal-ov';
+  el.innerHTML=`<div class="modal-sheet">
+    <div class="modal-title">Log recurring task</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:3px">${esc(t.title)}</div>
+    <div style="font-size:12px;color:var(--text-2);margin-bottom:18px">${recurLabel(t.recurrence)}</div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                color:var(--text-3);margin-bottom:10px">Schedule next occurrence</div>
+    ${fixedNext===rollingNext
+      ? optHtml('On schedule',fixedNext,true)
+      : optHtml('Keep on schedule — next '+fmtDateShort(fixedNext),fixedNext,true)
+        + optHtml('From today — '+fmtDateShort(rollingNext),rollingNext,false)
+    }
+    <button class="edit-cancel" data-a="close-recur-modal">Cancel</button>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click',e=>{if(e.target===el)closeCompleteRecurModal();});
+}
+
+function completeTask(id) {
+  const t=tasks.find(x=>x.id===id);
+  if(!t||t.completedAt) return;
+  if (t.recurrence) {
+    openCompleteRecurSheet(id);
+  } else {
+    t.completedAt=new Date().toISOString();
+    plate.ids=plate.ids.filter(x=>x!==id);
+    save(); showToast('Done ✓'); rv();
+  }
+}
+
+function skipRecurring(id) {
+  const t=tasks.find(x=>x.id===id); if(!t||!t.recurrence) return;
+  const next=calcNextDue(t.recurrence, t.nextDue||todayStr());
+  t.nextDue=next;
+  if(t.chunks) t.chunks.forEach(c=>c.completedAt=null);
+  plate.ids=plate.ids.filter(x=>x!==id);
+  save(); showToast(`Skipped — next: ${fmtNextDue(next)}`); rv();
+}
+
+function completeChunk(taskId, chunkId) {
+  const t=tasks.find(x=>x.id===taskId); if(!t||!t.chunks) return;
+  const ch=t.chunks.find(c=>c.id===chunkId); if(!ch) return;
+  if(ch.completedAt) {
+    ch.completedAt=null;
+    recurLog=recurLog.filter(r=>!(r.isChunk&&r.taskId===taskId&&r.chunkId===chunkId));
+    save(); rv(); return;
+  }
+  ch.completedAt=new Date().toISOString();
+  recurLog.push({id:newId(), taskId, chunkId, title:ch.title, parentTitle:t.title, completedAt:ch.completedAt, cat:t.category, isChunk:true});
+  if(t.chunks.every(c=>c.completedAt)) { save(); setTimeout(()=>completeTask(taskId),300); }
+  else { save(); rv(); }
+}
+
+function addToPlate(id)     { if(!plate.ids.includes(id)){plate.ids.push(id);save();showToast('Added to today');} rv(); }
+function removeFromPlate(id){ plate.ids=plate.ids.filter(x=>x!==id);save();rv(); }
+const activeTasks  = () => tasks.filter(t=>!t.completedAt);
+const plateTasks   = () => plate.ids.map(id=>tasks.find(t=>t.id===id)).filter(Boolean).filter(t=>!t.completedAt);
+
+function getSuggestions() {
+  const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
+  if(!tOpt||!eOpt) return [];
+  const plateSet=new Set(plate.ids);
+  const fireSet=new Set(activeTasks().filter(t=>briefStatus(t)).map(t=>t.id));
+  const cands=activeTasks().filter(t=>!plateSet.has(t.id)&&!fireSet.has(t.id));
+
+  const scored=cands.map(t=>{
+    let score=0;
+
+    // ── Step due date urgency (highest weight) ──────────────
+    if(t.chunks){
+      t.chunks.filter(c=>!c.completedAt).forEach(c=>{
+        if(!c.dueDate) return;
+        const d=daysUntil(c.dueDate);
+        if(d===null) return;
+        if(d<0)       score+=120;
+        else if(d===0) score+=90;
+        else if(d<=3)  score+=60;
+        else if(d<=7)  score+=30;
+        else if(d<=14) score+=10;
+      });
+      // more pending steps with dates = more momentum needed
+      const pendingWithDates=t.chunks.filter(c=>!c.completedAt&&c.dueDate).length;
+      score+=Math.min(pendingWithDates*4,20);
+    }
+
+    // ── Task-level deadline proximity ────────────────────────
+    const dueDate=t.recurrence?t.nextDue:t.deadline;
+    if(dueDate){
+      const d=daysUntil(dueDate);
+      if(d!==null){
+        if(d<0)        score+=80;
+        else if(d===0)  score+=60;
+        else if(d<=3)   score+=40;
+        else if(d<=7)   score+=25;
+        else if(d<=14)  score+=15;
+        else if(d<=30)  score+=5;
+      }
+    }
+
+    // ── Time investment fit ──────────────────────────────────
+    if(tOpt.levels.includes(t.time))  score+=25;
+    else score-=30; // task too big for available time
+
+    // ── Effort / energy fit ──────────────────────────────────
+    if(eOpt.levels.includes(t.effort)) score+=15;
+    else score-=20;
+
+    // ── Number of remaining steps (complexity signal) ────────
+    if(t.chunks){
+      const remaining=t.chunks.filter(c=>!c.completedAt).length;
+      score+=Math.min(remaining*2,12);
+    }
+
+    return {t,score};
+  });
+
+  return scored
+    .filter(x=>x.score>0)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,8)
+    .map(x=>x.t);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════
+
+let _tt;
+function showToast(msg){
+  const el=document.getElementById('toast');
+  if(!el) return;
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_tt); _tt=setTimeout(()=>el.classList.remove('show'),2400);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function metaRow(t) {
+  const c=getcat(t.category);
+  const dueDate=t.recurrence?t.nextDue:t.deadline;
+  const d=daysUntil(dueDate);
+  const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':fmtDateShort(dueDate)):'';
+  const chunkProg=(t.chunks&&t.time!=='low')?`<span class="progress-badge">${t.chunks.filter(c=>c.completedAt).length}/${t.chunks.length} steps</span>`:'';
+  const rlab=recurLabel(t.recurrence);
+  return `<div class="task-meta">
+    <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
+    ${dlTxt?`<span class="dl-tag ${dlClass(d)}">📅 ${dlTxt}</span>`:''}
+    ${rlab?`<span class="recur-badge">${rlab}</span>`:''}
+    <span class="meta-tag">⏱ ${TIME_LBL[t.time]}</span>
+    <span class="meta-tag">⚡ ${EFFORT_SH[t.effort]}</span>
+    ${chunkProg}
+  </div>`;
+}
+
+function chunkListHtml(t, inPlate=false) {
+  if (!t.chunks||!t.chunks.length||t.time==='low') return '';
+  return `<div class="chunk-list">
+    ${t.chunks.map(ch=>{
+      const dBadge=ch.dueDate&&!ch.completedAt
+        ? (()=>{const d=daysUntil(ch.dueDate); return `<span class="chunk-due${d!==null&&d<0?' overdue':''}">📅 ${d===0?'today':fmtDateShort(ch.dueDate)}</span>`;})()
+        : '';
+      return `<div class="chunk-item">
+        <button class="chunk-ck ${ch.completedAt?'done':''}"
+                data-a="complete-chunk" data-tid="${t.id}" data-cid="${ch.id}">
+          ${ch.completedAt?'✓':''}
+        </button>
+        <span class="chunk-title ${ch.completedAt?'done':''}">${esc(ch.title)}</span>
+        ${dBadge}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function medsSection() {
+  const btns=MEDS.map(m=>{
+    if(m.type==='seasonal'&&!medActive(m.id)) return '';
+    const taken=medTakenToday(m.id), skipped=medSkippedToday(m.id), lt=medLastTime(m.id);
+    const state=taken?'taken':skipped?'skipped':'';
+    return `<div class="med-group">
+      <button class="med-btn ${state}" data-a="log-med" data-med="${m.id}"
+              style="${taken?`border-color:${m.color};`:''}">
+        <span class="med-ck">${taken?'✓':'·'}</span>
+        <span class="med-name" style="color:${taken?m.color:'var(--text)'}">${m.name}</span>
+        <span class="med-time">${lt&&!skipped?fmtTime(lt):'—'}</span>
+      </button>
+      <button class="med-skip ${skipped?'active':''}" data-a="skip-med" data-med="${m.id}">
+        ${skipped?'skipped ✕':'skip'}
+      </button>
+    </div>`;
+  }).join('');
+  return `<div class="card">
+    <div class="meds-hd"><span class="meds-hd-label">Daily Log</span>
+      <button class="link-btn" data-a="med-settings">⚙ settings</button></div>
+    <div class="meds-row">${btns}</div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: TODAY
+// ═══════════════════════════════════════════════════════════
+
+function viewBrief() {
+  const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)))
+                   .sort((a,b)=>(daysUntil(a.recurrence?a.nextDue:a.deadline)||0)-(daysUntil(b.recurrence?b.nextDue:b.deadline)||0));
+  const todayPl = plateTasks();
+  const sug     = getSuggestions();
+  const ctxSet  = ctx.time && ctx.energy;
+
+  let h=`<div class="greeting">${greet()}, Jules</div>
+          <div class="date-str">${fmtDateFull(todayStr())}</div>
+          ${medsSection()}`;
+
+
+  // 🔥 Urgent (overdue + today)
+  if (urgent.length) {
+    h+=`<div class="sec-hd" style="color:var(--fire)">🔥 Due today</div><div class="grid-2col">`;
+    urgent.forEach(t=>{
+      const d=daysUntil(t.recurrence?t.nextDue:t.deadline);
+      const dtxt=d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':'';
+      const bc=d<=0?'overdue':'';
+      const c=getcat(t.category);
+      const rlab=recurLabel(t.recurrence);
+      const onPlate=plate.ids.includes(t.id);
+      h+=`<div class="fire-card">
+        <div class="fire-top">
+          <div class="fire-title">${titleLink(t)}</div>
+          <button class="task-edit-btn" data-a="open-edit" data-id="${t.id}" title="Edit">✎</button>
+          <span class="days-badge ${dlClass(d)}">${dtxt}</span>
+        </div>
+        <div class="task-meta" style="margin-bottom:4px">
+          <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
+          ${rlab?`<span class="recur-badge">${rlab}</span>`:''}
+          ${t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length} steps</span>`:''}
+        </div>
+        ${descLine(t)}
+        ${chunkListHtml(t)}
+        <div class="fire-btns">
+          <button class="fire-btn fire-btn-done" data-a="complete" data-id="${t.id}">${t.recurrence?'✓ Log ↻':'✓ Done'}</button>
+          ${!onPlate?`<button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Today</button>`:''}
+          ${t.recurrence?`<button class="fire-btn fire-btn-skip" data-a="skip-recur" data-id="${t.id}">Skip ↷</button>`:''}
+        </div>
+      </div>`;
+    });
+    h+=`</div>`;
+  }
+
+
+  // Today's Plate
+  if (todayPl.length) {
+    h+=`<div class="sec-row"><div class="sec-hd">Today's Plate</div>
+          <button class="link-btn" data-a="clear-plate">clear</button></div><div class="grid-2col">`;
+    todayPl.forEach(t=>{
+      const c=getcat(t.category);
+      const prog=t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length}</span>`:'';
+      h+=`<div class="plate-item">
+        <div class="plate-header">
+          <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
+          <div class="plate-dot" style="background:${c.color}"></div>
+          <div class="plate-title">${titleLink(t)}</div>
+          ${prog}
+          ${t.recurrence?`<button class="plate-rm" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="font-size:13px">↷</button>`:''}
+          <button class="plate-rm" data-a="rm-plate" data-id="${t.id}">✕</button>
+        </div>
+        ${chunkListHtml(t, true)}
+      </div>`;
+    });
+    h+=`</div>`;
+  }
+
+  // Context picker
+  if (!ctxSet) {
+    h+=`<div class="ctx-card" style="margin-top:${todayPl.length||urgent.length?'8px':'4px'}">
+      <div class="ctx-title">How's today looking?</div>
+      <div class="ctx-row"><div class="ctx-label">Time available</div>
+        <div class="pill-group">${TIME_OPTS.map(o=>`
+          <button class="pill-btn ${ctx.time===o.v?'sel':''}" data-a="set-time" data-v="${o.v}">${o.label}</button>`).join('')}
+        </div></div>
+      <div class="ctx-row"><div class="ctx-label">Energy level</div>
+        <div class="pill-group">${ENERGY_OPTS.map(o=>`
+          <button class="pill-btn ${ctx.energy===o.v?'sel':''}" data-a="set-energy" data-v="${o.v}">${o.label}</button>`).join('')}
+        </div></div>
+    </div>`;
+  }
+
+  // Suggestions
+  if (ctxSet) {
+    h+=`<div class="sec-row"><div class="sec-hd">Suggested for today</div>
+          <button class="link-btn" data-a="reset-ctx">change</button></div>`;
+    if (sug.length) {
+      h+=`<div class="grid-2col">`;
+      sug.forEach(t=>{
+        const c=getcat(t.category);
+        const d=daysUntil(t.recurrence?t.nextDue:t.deadline);
+        const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':`${d}d`):'';
+        h+=`<div class="sug-card">
+          <button class="sug-add" data-a="add-plate" data-id="${t.id}">+</button>
+          <div style="flex:1;min-width:0">
+            <div class="sug-title">${titleLink(t)}</div>
+            <div class="task-meta">
+              <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
+              ${dlTxt?`<span class="dl-tag ${dlClass(d)}">📅 ${dlTxt}</span>`:''}
+              ${recurLabel(t.recurrence)?`<span class="recur-badge">${recurLabel(t.recurrence)}</span>`:''}
+            </div>
+          </div>
+        </div>`;
+      });
+      h+=`</div>`;
+    } else {
+      h+=`<div class="empty"><div class="empty-ico">✨</div>
+            <div class="empty-txt">No matching tasks in backlog.<br>Tap ➕ to add some!</div></div>`;
+    }
+  }
+
+  if (!urgent.length&&!todayPl.length&&!ctxSet&&!activeTasks().length) {
+    h+=`<div class="empty" style="margin-top:24px">
+          <div class="empty-ico">🌱</div>
+          <div class="empty-txt">No tasks yet.<br>Tap ➕ to get started!</div></div>`;
+  }
+  return h;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SYNC ADD FORM (call before re-rendering add view)
+// ═══════════════════════════════════════════════════════════
+
+function syncAF() {
+  const g = id => document.getElementById(id);
+  if(g('f-title'))   AF.title=g('f-title').value;
+  if(g('f-deadline'))AF.deadline=g('f-deadline').value;
+  if(g('f-every'))   AF.recurEvery=g('f-every').value;
+  if(g('f-unit'))    AF.recurUnit=g('f-unit').value;
+  if(g('f-week'))    AF.recurWeek=g('f-week').value;
+  if(g('f-weekday')) AF.recurWeekday=g('f-weekday').value;
+  if(g('f-moint'))   AF.recurMonthInterval=g('f-moint').value;
+  if(g('f-cat'))     AF.category=g('f-cat').value;
+  document.querySelectorAll('.chunk-inp').forEach(inp=>{
+    const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
+    if(ch) ch.title=inp.value;
+  });
+  document.querySelectorAll('.chunk-date-inp').forEach(inp=>{
+    const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
+    if(ch) ch.dueDate=inp.value||undefined;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: ADD
+// ═══════════════════════════════════════════════════════════
+
+function viewAdd() {
+  const bigTask = AF.time==='medium' || AF.time==='high';
+  const showChunkHint = bigTask && !AF.showChunks && AF.chunks.length===0;
+
+  const recurSection = AF.recurring ? `
+    <div class="recur-box">
+      <div class="tab-pair">
+        <button class="tab-btn ${AF.recurType==='interval'?'sel':''}" data-a="set-recur-type" data-v="interval">Every N …</button>
+        <button class="tab-btn ${AF.recurType==='weekday'?'sel':''}"  data-a="set-recur-type" data-v="weekday">Day of month</button>
+      </div>
+      ${AF.recurType==='interval' ? `
+        <div class="inline-row">
+          <span class="inline-lbl">Every</span>
+          <input id="f-every" class="form-input form-input-sm" type="number" min="1" value="${esc(AF.recurEvery)}" style="width:70px">
+          <select id="f-unit" class="form-select" style="flex:1">
+            <option value="days"   ${AF.recurUnit==='days'  ?'selected':''}>days</option>
+            <option value="weeks"  ${AF.recurUnit==='weeks' ?'selected':''}>weeks</option>
+            <option value="months" ${AF.recurUnit==='months'?'selected':''}>months</option>
+          </select>
+        </div>
+      ` : `
+        <div>
+          <div class="inline-row" style="flex-wrap:wrap;gap:6px">
+            <span class="inline-lbl">The</span>
+            <select id="f-week" class="form-select" style="flex:1;min-width:90px">
+              ${ORDINALS.map(o=>`<option value="${o.v}" ${AF.recurWeek===o.v?'selected':''}>${o.label}</option>`).join('')}
+            </select>
+            <select id="f-weekday" class="form-select" style="flex:1;min-width:100px">
+              ${WEEKDAYS.map((d,i)=>`<option value="${i}" ${AF.recurWeekday===String(i)?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div class="inline-row" style="margin-top:8px">
+            <span class="inline-lbl">of every</span>
+            <input id="f-moint" class="form-input form-input-sm" type="number" min="1" value="${esc(AF.recurMonthInterval)}" style="width:60px">
+            <span class="inline-lbl">month(s)</span>
+          </div>
+        </div>
+      `}
+    </div>` : '';
+
+  const chunksSection = `
+    <div class="form-group">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${AF.chunks.length||showChunkHint?'8px':'0'}">
+        <label class="form-label" style="margin:0">Sub-steps <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(optional)</span></label>
+        <button class="link-btn" data-a="add-chunk">+ add step</button>
+      </div>
+      ${showChunkHint ? `<div class="hint-row">💡 Big task? Sub-steps help you make progress without finishing everything at once.</div>` : ''}
+      ${AF.chunks.map((ch,i)=>`
+        <div class="chunk-form-row">
+          <input class="form-input chunk-inp" type="text" placeholder="Step ${i+1}…"
+                 value="${esc(ch.title)}" data-cid="${ch.id}" style="flex:1;padding:10px 12px;font-size:14px">
+          <button data-a="rm-chunk" data-cid="${ch.id}"
+                  style="color:var(--text-3);background:none;border:none;font-size:20px;cursor:pointer;padding:4px">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-left:2px">
+          <span style="font-size:11px;color:var(--text-3);white-space:nowrap">Due</span>
+          <input type="date" class="chunk-date-inp" data-cid="${ch.id}" value="${ch.dueDate||''}"
+                 style="border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;
+                        color:var(--text-2);background:var(--surface-2);flex:1;min-width:0">
+        </div>`).join('')}
+    </div>`;
+
+  return `
+    <div class="page-title">Add Task</div>
+    <div class="page-sub">Goes straight to the backlog</div>
+
+    <div class="form-group">
+      <label class="form-label">What needs doing?</label>
+      <input id="f-title" class="form-input" type="text" placeholder="Task title…" autocomplete="off">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <select id="f-cat" class="form-select">
+        ${CATS.map(c=>`<option value="${c.id}" ${AF.category===c.id?'selected':''}>${c.emoji} ${c.name}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Time investment</label>
+      <div class="opt-grid">
+        ${['low','medium','high'].map(v=>`
+          <button class="opt-btn ${AF.time===v?'sel':''}" data-a="set-ftime" data-v="${v}">${TIME_LBL[v]}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Cognitive effort</label>
+      <div class="opt-grid">
+        ${['low','medium','high'].map(v=>`
+          <button class="opt-btn ${AF.effort===v?'sel':''}" data-a="set-feffort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('')}
+      </div>
+    </div>
+
+    ${bigTask ? chunksSection : ''}
+
+    <div class="form-group">
+      <div class="toggle-row-sm" style="margin-bottom:${AF.recurring?'10px':'0'}">
+        <label class="toggle-lbl">Recurring?</label>
+        <button class="toggle ${AF.recurring?'on':''}" data-a="toggle-recurring"></button>
+      </div>
+      ${recurSection}
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">${AF.recurring?'First due / Start date':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(optional)</span></label>
+      <input id="f-deadline" class="form-input" type="date" min="${todayStr()}" value="${AF.deadline}">
+    </div>
+
+    <button class="submit-btn" data-a="submit-task">Add to Backlog</button>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: BACKLOG
+// ═══════════════════════════════════════════════════════════
+
+function viewBacklog() {
+  const all=activeTasks();
+  const filtered=bFilter==='all'?all:all.filter(t=>t.category===bFilter);
+
+  // date sort: soonest due first, no-date tasks at the end
+  const dueDateOf = t => t.recurrence?t.nextDue:t.deadline;
+  const byDate = (a,b) => {
+    const da=dueDateOf(a), db=dueDateOf(b);
+    if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1;
+    return da.localeCompare(db);
+  };
+
+  const chips=`<div class="filter-row">
+    <button class="fchip ${bFilter==='all'?'on':''}" data-a="fcat" data-cat="all">All (${all.length})</button>
+    ${CATS.map(c=>{const n=all.filter(t=>t.category===c.id).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
+  </div>`;
+  const sortRow=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
+    <span style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-right:2px">Sort</span>
+    <button class="fchip ${bSort==='cat'?'on':''}" data-a="set-sort" data-v="cat">Category</button>
+    <button class="fchip ${bSort==='date'?'on':''}" data-a="set-sort" data-v="date">By date</button>
+  </div>`;
+
+  let body='';
+  if (!filtered.length) {
+    body=`<div class="empty"><div class="empty-ico">📭</div><div class="empty-txt">Nothing here yet!</div></div>`;
+  } else if (bSort==='date') {
+    // flat list sorted by due date; date dividers only when all/no category filter
+    const sorted=[...filtered].sort(byDate);
+    if (bFilter==='all') {
+      // show a thin category label inline instead of full headers
+      sorted.forEach(t=>{body+=taskRow(t);});
+    } else {
+      sorted.forEach(t=>{body+=taskRow(t);});
+    }
+  } else if (bFilter!=='all') {
+    // single category, default order
+    filtered.forEach(t=>{body+=taskRow(t);});
+  } else {
+    // grouped by category, sorted by date within each group
+    CATS.forEach(c=>{
+      const ct=[...filtered.filter(t=>t.category===c.id)].sort(byDate);
+      if(!ct.length) return;
+      body+=`<div class="cat-hd"><div class="cat-dot" style="background:${c.color}"></div>
+               <div class="cat-hd-name">${c.emoji} ${c.name}</div><div class="cat-hd-ct">${ct.length}</div></div>`;
+      ct.forEach(t=>{body+=taskRow(t);});
+    });
+  }
+  const searchBar=`<div class="b-search-wrap">
+    <span class="b-search-ico">🔍</span>
+    <input id="b-search" class="form-input" type="search" placeholder="Search tasks…"
+           value="${esc(bSearch)}" autocomplete="off" autocorrect="off" spellcheck="false">
+    <button class="b-search-clear" id="b-search-clear" style="display:${bSearch?'':'none'}">×</button>
+  </div>`;
+  return `<div class="page-title">Backlog</div>${searchBar}${sortRow}${chips}${body}`;
+}
+
+function taskRow(t) {
+  const c=getcat(t.category);
+  const onPlate=plate.ids.includes(t.id);
+  return `<div class="task-card" data-title="${esc(t.title.toLowerCase())}">
+    <button class="task-ck" data-a="complete" data-id="${t.id}"></button>
+    <div class="task-body">
+      <div class="task-title">${titleLink(t)}</div>
+      ${metaRow(t)}
+      ${descLine(t)}
+    </div>
+    <button class="task-edit-btn" data-a="open-edit" data-id="${t.id}" title="Edit" style="align-self:center">✎</button>
+    ${t.recurrence?`<button class="task-edit-btn" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="align-self:center;font-size:13px">↷</button>`:''}
+    ${!onPlate
+      ?`<button class="add-plate-btn" data-a="add-plate" data-id="${t.id}">+</button>`
+      :`<span style="font-size:11px;color:var(--accent);font-weight:700;align-self:center;flex-shrink:0">today</span>`}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: LOG
+// ═══════════════════════════════════════════════════════════
+
+function viewLog() {
+  const done=[...tasks.filter(t=>t.completedAt)].sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
+  const rlog=[...recurLog].sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
+  const mlogs=[...medLogs].sort((a,b)=>new Date(b.takenAt)-new Date(a.takenAt));
+  const byDate={};
+  done.forEach(t=>{const d=t.completedAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'task',ts:t.completedAt,data:t});});
+  rlog.forEach(l=>{const d=l.completedAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'recur',ts:l.completedAt,data:l});});
+  mlogs.forEach(l=>{const d=l.takenAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'med',ts:l.takenAt,data:l});});
+  const dates=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  if (!dates.length) return `<div class="page-title">Log</div>
+    <div class="empty" style="margin-top:32px"><div class="empty-ico">📜</div>
+    <div class="empty-txt">Nothing logged yet.<br>Complete tasks or take your meds!</div></div>`;
+  let h=`<div class="page-title">Log</div>`;
+  dates.forEach(ds=>{
+    const entries=byDate[ds].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+    const lbl=ds===todayStr()?'Today':fmtDateShort(ds);
+    h+=`<div class="log-date">${lbl}</div>`;
+    entries.forEach(e=>{
+      if (e.type==='task') {
+        const c=getcat(e.data.category);
+        h+=`<div class="log-item"><span class="log-ico">${c.emoji}</span>
+          <div class="log-body">${esc(e.data.title)}<br><span class="log-sub">${c.name}</span></div>
+          <div class="log-time">${fmtTime(e.ts)}</div>
+          <button class="task-edit-btn" data-a="open-log-edit" data-type="task" data-id="${e.data.id}" title="Edit">✎</button>
+          <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="task" data-id="${e.data.id}" title="Delete">✕</button></div>`;
+      } else if (e.type==='recur') {
+        const t=tasks.find(x=>x.id===e.data.taskId);
+        const c=t?getcat(t.category):getcat(e.data.cat||'misc');
+        if (e.data.isChunk) {
+          h+=`<div class="log-item"><span class="log-ico" style="opacity:.7">↳</span>
+            <div class="log-body">${esc(e.data.title)}<br><span class="log-sub">${c.emoji} ${esc(e.data.parentTitle)} · step</span></div>
+            <div class="log-time">${fmtTime(e.ts)}</div>
+            <button class="task-edit-btn log-del-btn" data-a="delete-chunk-log" data-id="${e.data.id}" data-tid="${e.data.taskId}" data-cid="${e.data.chunkId}" title="Delete">✕</button></div>`;
+        } else {
+          h+=`<div class="log-item"><span class="log-ico">${c.emoji}</span>
+            <div class="log-body">${esc(e.data.title)}<br><span class="log-sub">${c.name} · ${recurLabel(t?.recurrence||null)}</span></div>
+            <div class="log-time">${fmtTime(e.ts)}</div>
+            <button class="task-edit-btn" data-a="open-log-edit" data-type="recur" data-id="${e.data.id}" title="Edit">✎</button>
+            <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="recur" data-id="${e.data.id}" title="Delete">✕</button></div>`;
+        }
+      } else {
+        const m=getmed(e.data.medId), sk=e.data.skipped;
+        h+=`<div class="log-item" style="${sk?'opacity:.55':''}"><span class="log-ico">${sk?'⊘':'💊'}</span>
+          <div class="log-body">${m?.name||'?'}${sk?` <span style="font-size:10px;font-weight:700;color:var(--text-3)">SKIPPED</span>`:''}
+            <br><span class="log-sub">${m?.full||''}</span></div>
+          <div class="log-time">${fmtTime(e.ts)}</div>
+          <button class="task-edit-btn" data-a="open-log-edit" data-type="med" data-id="${e.data.id}" title="Edit">✎</button>
+          <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="med" data-id="${e.data.id}" title="Delete">✕</button></div>`;
+      }
+    });
+  });
+  return h;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MED SETTINGS MODAL
+// ═══════════════════════════════════════════════════════════
+
+function openMedSettings() {
+  if (document.getElementById('med-modal')) return;
+  const rows=MEDS.map(m=>`
+    <div class="m-toggle-row">
+      <div><div class="m-tgl-lbl">${m.name} — ${m.full}</div>
+        <div class="m-tgl-sub">${m.type==='seasonal'?'Seasonal — toggle on during allergy season':m.skippable?'Daily · OK to skip occasionally':'Daily · core'}</div></div>
+      ${m.type==='seasonal'
+        ?`<button class="toggle ${medActive(m.id)?'on':''}" data-a="toggle-seasonal" data-med="${m.id}"></button>`
+        :`<div style="font-size:11px;color:var(--text-3)">always on</div>`}
+    </div>`).join('');
+  const el=document.createElement('div');
+  el.id='med-modal'; el.className='modal-ov';
+  el.innerHTML=`<div class="modal-sheet"><div class="modal-title">Meds & Vitamins</div>${rows}
+    <button class="modal-done" data-a="close-modal">Done</button></div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{
+    const btn=e.target.closest('[data-a]');
+    if(!btn){if(e.target===el)closeModal();return;}
+    if(btn.dataset.a==='close-modal'){closeModal();return;}
+    if(btn.dataset.a==='toggle-seasonal'){
+      const mid=btn.dataset.med;
+      settings.seasonalMeds=settings.seasonalMeds||{};
+      settings.seasonalMeds[mid]=!settings.seasonalMeds[mid];
+      btn.classList.toggle('on',!!settings.seasonalMeds[mid]);
+      save();
+    }
+  });
+}
+function closeModal(){const el=document.getElementById('med-modal');if(el)el.remove();save();if(curView==='brief')rv();}
+
+function closeLogEditModal(){const el=document.getElementById('log-edit-modal');if(el)el.remove();}
+function openLogEditSheet(type, id) {
+  if(document.getElementById('log-edit-modal')) return;
+  let entry, ts;
+  if(type==='task')       { entry=tasks.find(x=>x.id===id);    ts=entry?.completedAt; }
+  else if(type==='recur') { entry=recurLog.find(x=>x.id===id); ts=entry?.completedAt; }
+  else                    { entry=medLogs.find(x=>x.id===id);   ts=entry?.takenAt; }
+  if(!entry||!ts) return;
+  const dateVal=ts.slice(0,10), timeVal=ts.slice(11,16);
+  const label=type==='task'?esc(entry.title):type==='recur'?esc(entry.title):(getmed(entry.medId)?.name||'?');
+  let extraFields='';
+  if(type==='task') {
+    const cats=CATS.map(c=>`<option value="${c.id}"${(entry.category||'misc')===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
+    extraFields=`<label class="edit-label">Category</label>
+    <select class="edit-field" id="le-cat">${cats}</select>`;
+  } else if(type==='recur') {
+    const cats=CATS.map(c=>`<option value="${c.id}"${(entry.cat||'misc')===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
+    extraFields=`<label class="edit-label">Title</label>
+    <input class="edit-field" id="le-title" value="${esc(entry.title)}" placeholder="Title">
+    <label class="edit-label">Category</label>
+    <select class="edit-field" id="le-cat">${cats}</select>`;
+  }
+  const delLabel=type==='task'?'Unmark complete (restore to active)':'Delete entry';
+  const el=document.createElement('div');
+  el.id='log-edit-modal'; el.className='modal-ov';
+  el.innerHTML=`<div class="modal-sheet">
+    <div class="modal-title">Edit log entry</div>
+    <div style="font-size:14px;font-weight:500;margin-bottom:14px;color:var(--text-2)">${label}</div>
+    ${extraFields}
+    <label class="edit-label">Date</label>
+    <input class="edit-field" id="le-date" type="date" value="${dateVal}">
+    <label class="edit-label">Time</label>
+    <input class="edit-field" id="le-time" type="time" value="${timeVal}">
+    <button class="modal-done" data-a="save-log-edit" data-type="${type}" data-id="${id}">Save</button>
+    <button class="edit-del" data-a="delete-log-entry" data-type="${type}" data-id="${id}">${delLabel}</button>
+    <button class="edit-cancel" data-a="close-log-edit">Cancel</button>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click',e=>{if(e.target===el)closeLogEditModal();});
+}
+
+function closeEditModal(){const el=document.getElementById('edit-modal');if(el)el.remove();}
+
+function syncEditChunkTitles() {
+  document.querySelectorAll('[data-chunk-idx]').forEach(inp=>{
+    const i=parseInt(inp.dataset.chunkIdx);
+    if(editChunks[i]) editChunks[i].title=inp.value;
+  });
+  document.querySelectorAll('[data-chunk-date]').forEach(inp=>{
+    const i=parseInt(inp.dataset.chunkDate);
+    if(editChunks[i]) editChunks[i].dueDate=inp.value||undefined;
+  });
+}
+function renderEditChunks() {
+  const list=document.getElementById('edit-chunks-list'); if(!list) return;
+  list.innerHTML=editChunks.map((ch,i)=>`
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+      <input class="edit-field" style="margin-bottom:0;flex:1" placeholder="Step ${i+1}"
+             value="${esc(ch.title)}" data-chunk-idx="${i}">
+      <button style="background:none;border:none;color:var(--text-3);font-size:20px;
+                     cursor:pointer;padding:4px;flex-shrink:0;line-height:1"
+              data-rm-chunk="${i}">✕</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:9px;padding-left:2px">
+      <span style="font-size:10px;color:var(--text-3);white-space:nowrap">Due date</span>
+      <input type="date" style="border:1px solid var(--border);border-radius:6px;padding:3px 6px;
+             font-size:11px;color:var(--text-2);background:var(--surface-2);flex:1;min-width:0"
+             value="${ch.dueDate||''}" data-chunk-date="${i}">
+    </div>`).join('');
+  list.querySelectorAll('[data-rm-chunk]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      syncEditChunkTitles();
+      editChunks.splice(parseInt(b.dataset.rmChunk),1);
+      renderEditChunks();
+    });
+  });
+}
+
+function openEditSheet(id) {
+  if(document.getElementById('edit-modal')) return;
+  const t=tasks.find(x=>x.id===id); if(!t) return;
+  editChunks = t.chunks ? t.chunks.map(c=>({id:c.id,title:c.title,completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})) : [];
+  const dateVal=t.recurrence?(t.nextDue||''):(t.deadline||'');
+  const dateLabel=t.recurrence?'Next due':'Deadline';
+  const cats=CATS.map(c=>`<option value="${c.id}"${t.category===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
+  const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${t.time===v?' sel':''}" data-et="time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
+  const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${t.effort===v?' sel':''}" data-et="effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
+  const el=document.createElement('div');
+  el.id='edit-modal'; el.className='modal-ov';
+  el.innerHTML=`<div class="modal-sheet">
+    <div class="modal-title">Edit task</div>
+    <label class="edit-label">Title</label>
+    <input class="edit-field" id="et-title" value="${esc(t.title)}" placeholder="Task title">
+    <label class="edit-label">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+    <textarea class="edit-field" id="et-desc" rows="3" placeholder="Additional info, context…" style="resize:vertical;min-height:60px">${esc(t.description||'')}</textarea>
+    <label class="edit-label">Link <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional — title becomes a hyperlink</span></label>
+    <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
+    <label class="edit-label">Category</label>
+    <select class="edit-field" id="et-cat">${cats}</select>
+    ${dateVal!==''?`<label class="edit-label">${dateLabel}</label>
+    <input class="edit-field" id="et-date" type="date" value="${dateVal}">
+    <div class="snooze-row">
+      <button class="snooze-btn" data-snooze="1">+1d</button>
+      <button class="snooze-btn" data-snooze="3">+3d</button>
+      <button class="snooze-btn" data-snooze="7">+1w</button>
+      <button class="snooze-btn" data-snooze="14">+2w</button>
+    </div>`:''}
+    <label class="edit-label">Time needed</label>
+    <div class="edit-pills">${timePills}</div>
+    <label class="edit-label">Effort</label>
+    <div class="edit-pills">${effortPills}</div>
+    <div id="edit-steps-section" style="${t.time==='low'?'display:none':''}">
+      <label class="edit-label" style="margin-top:4px">Steps <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+      <div id="edit-chunks-list"></div>
+      <button id="edit-add-chunk" style="background:none;border:none;color:var(--accent);font-size:13px;
+              font-weight:600;cursor:pointer;padding:4px 0 12px;text-align:left;width:100%">+ Add step</button>
+    </div>
+    <button class="modal-done" data-a="save-edit" data-id="${id}">Save</button>
+    ${t.recurrence?`<button class="edit-del" style="background:var(--surface);color:var(--text-2);border-color:var(--border)" data-a="skip-recur-edit" data-id="${id}">Skip ↷ to next occurrence</button>`:''}
+    <button class="edit-del" data-a="delete-task" data-id="${id}">Delete task</button>
+    <button class="edit-cancel" data-a="close-edit">Cancel</button>
+  </div>`;
+  document.body.appendChild(el);
+  renderEditChunks();
+  document.getElementById('edit-add-chunk').addEventListener('click',()=>{
+    syncEditChunkTitles();
+    editChunks.push({id:newId(),title:'',completedAt:null});
+    renderEditChunks();
+    setTimeout(()=>{const ins=document.querySelectorAll('[data-chunk-idx]');if(ins.length)ins[ins.length-1].focus();},40);
+  });
+  el.querySelectorAll('[data-snooze]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const inp=document.getElementById('et-date'); if(!inp) return;
+      const base=inp.value||todayStr();
+      const d=new Date(base+'T12:00:00');
+      d.setDate(d.getDate()+parseInt(b.dataset.snooze));
+      inp.value=d.toISOString().slice(0,10);
+    });
+  });
+  el.querySelectorAll('[data-et]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      el.querySelectorAll(`[data-et="${b.dataset.et}"]`).forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel');
+      if(b.dataset.et==='time') {
+        const sec=document.getElementById('edit-steps-section');
+        if(sec) sec.style.display=b.dataset.v==='low'?'none':'';
+      }
+    });
+  });
+  el.addEventListener('click',e=>{if(e.target===el)closeEditModal();});
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NAVIGATION & RENDER
+// ═══════════════════════════════════════════════════════════
+
+const VIEWS={brief:viewBrief,add:viewAdd,backlog:viewBacklog,log:viewLog};
+
+function navigate(v) {
+  if(v!=='backlog') bSearch='';
+  curView=v;
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===v));
+  rv();
+  document.getElementById('app').scrollTop=0;
+}
+
+function applyBacklogSearch(q) {
+  const term=q.toLowerCase().trim();
+  document.querySelectorAll('.task-card').forEach(card=>{
+    card.style.display=(!term||card.dataset.title.includes(term))?'':'none';
+  });
+  // hide category headers whose tasks are all hidden
+  document.querySelectorAll('.cat-hd').forEach(hd=>{
+    let sib=hd.nextElementSibling, hasVis=false;
+    while(sib && !sib.classList.contains('cat-hd')){
+      if(sib.classList.contains('task-card') && sib.style.display!=='none') hasVis=true;
+      sib=sib.nextElementSibling;
+    }
+    hd.style.display=hasVis?'':'none';
+  });
+}
+
+function rv() {
+  document.getElementById('app').innerHTML=`<div class="view">${(VIEWS[curView]||viewBrief)()}</div>`;
+  if (curView==='add') {
+    const ti=document.getElementById('f-title');
+    if(ti){ ti.value=AF.title; ti.addEventListener('input',e=>AF.title=e.target.value); }
+  }
+  if (curView==='backlog') {
+    const si=document.getElementById('b-search');
+    const cb=document.getElementById('b-search-clear');
+    if(si) {
+      if(bSearch){ applyBacklogSearch(bSearch); si.focus(); si.setSelectionRange(bSearch.length,bSearch.length); }
+      si.addEventListener('input', e=>{
+        bSearch=e.target.value;
+        if(cb) cb.style.display=bSearch?'':'none';
+        applyBacklogSearch(bSearch);
+      });
+    }
+    if(cb) cb.addEventListener('click', ()=>{bSearch=''; rv();});
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EVENT HANDLING
+// ═══════════════════════════════════════════════════════════
+
+document.addEventListener('click', e=>{
+  const btn=e.target.closest('[data-a]'); if(!btn) return;
+  const a=btn.dataset.a, id=btn.dataset.id;
+
+  switch(a) {
+    case 'log-med':  toggleMed(btn.dataset.med); break;
+    case 'skip-med': skipMed(btn.dataset.med); break;
+    case 'med-settings': openMedSettings(); break;
+
+    case 'complete':
+      btn.classList.add('anim-pop');
+      setTimeout(()=>completeTask(id),180); break;
+
+    case 'complete-chunk': completeChunk(btn.dataset.tid, btn.dataset.cid); break;
+
+    case 'add-plate':  addToPlate(id); break;
+    case 'rm-plate':   removeFromPlate(id); break;
+    case 'clear-plate': plate.ids=[];save();rv(); break;
+
+    case 'set-time':
+      ctx.time=btn.dataset.v; ctx.date=todayStr(); save();
+      document.querySelectorAll('[data-a="set-time"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===ctx.time));
+      if(ctx.time&&ctx.energy) rv(); break;
+
+    case 'set-energy':
+      ctx.energy=btn.dataset.v; ctx.date=todayStr(); save();
+      document.querySelectorAll('[data-a="set-energy"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===ctx.energy));
+      if(ctx.time&&ctx.energy) rv(); break;
+
+    case 'reset-ctx': ctx.time=null;ctx.energy=null;save();rv(); break;
+
+    case 'set-ftime':
+      syncAF(); AF.time=btn.dataset.v;
+      document.querySelectorAll('[data-a="set-ftime"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===AF.time));
+      // Re-render only if chunk hint visibility changes
+      { const was=AF.showChunks||AF.chunks.length>0; if(!was) rv(); } break;
+
+    case 'set-feffort':
+      syncAF(); AF.effort=btn.dataset.v;
+      document.querySelectorAll('[data-a="set-feffort"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===AF.effort));
+      { const was=AF.showChunks||AF.chunks.length>0; if(!was) rv(); } break;
+
+    case 'toggle-recurring':
+      syncAF(); AF.recurring=!AF.recurring;
+      rv(); break;
+
+    case 'set-recur-type':
+      syncAF(); AF.recurType=btn.dataset.v; rv(); break;
+
+    case 'add-chunk':
+      syncAF(); AF.chunks.push({id:newId(),title:'',completedAt:null}); AF.showChunks=true; rv();
+      // Focus the new input
+      setTimeout(()=>{const ins=document.querySelectorAll('.chunk-inp');if(ins.length)ins[ins.length-1].focus();},50);
+      break;
+
+    case 'rm-chunk':
+      syncAF(); AF.chunks=AF.chunks.filter(c=>c.id!==btn.dataset.cid); rv(); break;
+
+    case 'submit-task': {
+      syncAF();
+      const title=AF.title.trim();
+      if(!title){document.getElementById('f-title')?.focus();showToast('Please enter a title');return;}
+      const catEl=document.getElementById('f-cat');
+      const cat=catEl?catEl.value:AF.category;
+      let recurrence=null;
+      if(AF.recurring){
+        if(AF.recurType==='interval'){
+          recurrence={type:'interval',every:parseInt(AF.recurEvery)||1,unit:AF.recurUnit};
+        } else {
+          recurrence={type:'weekday',week:AF.recurWeek,weekday:AF.recurWeekday,monthInterval:parseInt(AF.recurMonthInterval)||1};
+        }
+      }
+      const chunks=AF.chunks.filter(c=>c.title.trim()).map(c=>({id:c.id,title:c.title.trim(),completedAt:null,dueDate:c.dueDate||undefined}));
+      const stepDates=chunks.map(c=>c.dueDate).filter(Boolean).sort();
+      const deadline=AF.deadline||(stepDates.length?stepDates[stepDates.length-1]:null);
+      addTask({title,category:cat,time:AF.time,effort:AF.effort,
+               deadline,
+               recurrence,chunks:chunks.length?chunks:null});
+      AF={title:'',category:cat,time:'medium',effort:'medium',
+          deadline:'',recurring:false,recurType:'interval',
+          recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',
+          chunks:[],showChunks:false};
+      showToast('Added to backlog ✓'); navigate('backlog'); break;
+    }
+
+    case 'fcat': bFilter=btn.dataset.cat; rv(); break;
+    case 'set-sort': bSort=btn.dataset.v; rv(); break;
+
+    case 'confirm-recur': doCompleteRecur(id, btn.dataset.next); break;
+    case 'close-recur-modal': closeCompleteRecurModal(); break;
+    case 'skip-recur':      skipRecurring(id); break;
+    case 'skip-recur-edit': closeEditModal(); skipRecurring(id); break;
+
+    case 'open-log-edit': openLogEditSheet(btn.dataset.type, id); break;
+    case 'close-log-edit': closeLogEditModal(); break;
+    case 'save-log-edit': {
+      const ltype=btn.dataset.type;
+      const dateVal=document.getElementById('le-date')?.value;
+      const timeVal=document.getElementById('le-time')?.value;
+      if(!dateVal||!timeVal){showToast('Date and time required');return;}
+      const newTs=`${dateVal}T${timeVal}:00`;
+      if(ltype==='task') {
+        const t=tasks.find(x=>x.id===id);
+        if(t) {
+          t.completedAt=newTs;
+          const cv=document.getElementById('le-cat')?.value;
+          if(cv) t.category=cv;
+        }
+      } else if(ltype==='recur') {
+        const r=recurLog.find(x=>x.id===id);
+        if(r) {
+          r.completedAt=newTs;
+          const tv=(document.getElementById('le-title')?.value||'').trim();
+          if(tv) r.title=tv;
+          const cv=document.getElementById('le-cat')?.value;
+          if(cv) r.cat=cv;
+        }
+      } else {
+        const m=medLogs.find(x=>x.id===id); if(m) m.takenAt=newTs;
+      }
+      save(); closeLogEditModal(); showToast('Updated ✓'); rv(); break;
+    }
+    case 'delete-log-entry': {
+      const ltype=btn.dataset.type;
+      const msg=ltype==='task'?'Restore task to active (unmark complete)?':'Delete this log entry?';
+      if(!confirm(msg)) break;
+      if(ltype==='task') {
+        const t=tasks.find(x=>x.id===id); if(t) { delete t.completedAt; delete t.completedChunks; }
+      } else if(ltype==='recur') {
+        recurLog=recurLog.filter(x=>x.id!==id);
+      } else {
+        medLogs=medLogs.filter(x=>x.id!==id);
+      }
+      save(); closeLogEditModal(); rv(); break;
+    }
+
+    case 'delete-chunk-log': {
+      if(!confirm('Remove this step from the log? (It will be unchecked on the task.)')) break;
+      const entry=recurLog.find(x=>x.id===id);
+      if(entry) {
+        const t=tasks.find(x=>x.id===btn.dataset.tid);
+        if(t&&t.chunks) { const ch=t.chunks.find(c=>c.id===btn.dataset.cid); if(ch) ch.completedAt=null; }
+        recurLog=recurLog.filter(x=>x.id!==id);
+      }
+      save(); rv(); break;
+    }
+
+    case 'open-edit': openEditSheet(id); break;
+    case 'close-edit': closeEditModal(); break;
+    case 'save-edit': {
+      const t=tasks.find(x=>x.id===id); if(!t){closeEditModal();break;}
+      const title=(document.getElementById('et-title')?.value||'').trim();
+      if(!title){showToast('Title required');return;}
+      t.title=title;
+      t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
+      t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
+      t.category=document.getElementById('et-cat')?.value||t.category;
+      const dateInp=document.getElementById('et-date');
+      if(dateInp!==null&&dateInp!==undefined){
+        if(t.recurrence) t.nextDue=dateInp.value||t.nextDue;
+        else t.deadline=dateInp.value||null;
+      }
+      t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
+      t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
+      if(t.time==='low') {
+        t.chunks=null;
+      } else {
+        syncEditChunkTitles();
+        const saved=editChunks.filter(c=>c.title.trim());
+        t.chunks=saved.length?saved.map(c=>({id:c.id||newId(),title:c.title.trim(),completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})):null;
+        if(!t.recurrence && t.chunks) {
+          const stepDates=t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
+          if(stepDates.length && !dateInp?.value) t.deadline=stepDates[stepDates.length-1];
+        }
+      }
+      save(); closeEditModal(); showToast('Saved ✓'); rv(); break;
+    }
+    case 'delete-task': {
+      if(!confirm('Delete this task?')) break;
+      tasks=tasks.filter(x=>x.id!==id);
+      plate.ids=plate.ids.filter(x=>x!==id);
+      save(); closeEditModal(); rv(); break;
+    }
+  }
+});
+
+document.getElementById('nav').addEventListener('click', e=>{
+  const b=e.target.closest('[data-nav]'); if(b) navigate(b.dataset.nav);
+});
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+
+load();
+initSync();
+
+// ── One-time seed: GGVI project task ────────────────────────
+if(!tasks.find(t=>t.title==='GGVI')) {
+  addTask({
+    title:'GGVI', category:'comp-admin', time:'high', effort:'high',
+    deadline:'2026-06-15',
+    chunks:[
+      // Phase 1 — Literature & assessment (~2 days each, high cog)
+      {id:newId(),title:'Detroit literature/assessment of variables 1–5',   completedAt:null,dueDate:'2026-05-22'},
+      {id:newId(),title:'Detroit literature/assessment of variables 6–10',  completedAt:null,dueDate:'2026-05-24'},
+      {id:newId(),title:'Detroit literature/assessment of variables 11–15', completedAt:null,dueDate:'2026-05-26'},
+      {id:newId(),title:'Detroit literature/assessment of variables 16–20', completedAt:null,dueDate:'2026-05-27'},
+      {id:newId(),title:'Detroit literature/assessment of variables 21–25', completedAt:null,dueDate:'2026-05-29'},
+      {id:newId(),title:'Detroit literature/assessment of variables 26–30', completedAt:null,dueDate:'2026-05-31'},
+      {id:newId(),title:'Detroit literature/assessment of variables 30–35', completedAt:null,dueDate:'2026-06-02'},
+      {id:newId(),title:'Variable relationships — finalized',               completedAt:null,dueDate:'2026-06-02'},
+      {id:newId(),title:'Determine age-22 parameters',                      completedAt:null,dueDate:'2026-06-03'},
+      {id:newId(),title:'Final Detroit variable list',                      completedAt:null,dueDate:'2026-06-03'},
+      // Phase 2 — Script/CSV + method logging (paired by variable group)
+      {id:newId(),title:'Script/CSV for variables 1–5',                    completedAt:null,dueDate:'2026-06-04'},
+      {id:newId(),title:'Method logged for variables 1–5',                 completedAt:null,dueDate:'2026-06-04'},
+      {id:newId(),title:'Script/CSV for variables 6–10',                   completedAt:null,dueDate:'2026-06-05'},
+      {id:newId(),title:'Method logged for variables 6–10',                completedAt:null,dueDate:'2026-06-05'},
+      {id:newId(),title:'Script/CSV for variables 11–15',                  completedAt:null,dueDate:'2026-06-06'},
+      {id:newId(),title:'Method logged for variables 16–20',               completedAt:null,dueDate:'2026-06-06'},
+      {id:newId(),title:'Check quality of variables 26–30',                completedAt:null,dueDate:'2026-06-07'},
+      {id:newId(),title:'Check quality of variables 31–35',                completedAt:null,dueDate:'2026-06-07'},
+      {id:newId(),title:'Script/CSV for variables 21–25',                  completedAt:null,dueDate:'2026-06-08'},
+      {id:newId(),title:'Method logged for variables 21–25',               completedAt:null,dueDate:'2026-06-08'},
+      {id:newId(),title:'Script/CSV for variables 26–30',                  completedAt:null,dueDate:'2026-06-09'},
+      {id:newId(),title:'Method logged for variables 26–30',               completedAt:null,dueDate:'2026-06-09'},
+      {id:newId(),title:'Script/CSV for variables 31–35',                  completedAt:null,dueDate:'2026-06-10'},
+      {id:newId(),title:'Method logged for variables 31–35',               completedAt:null,dueDate:'2026-06-10'},
+      // Phase 3 — Normalization (high cog, sequential)
+      {id:newId(),title:'Normalization method research',                    completedAt:null,dueDate:'2026-06-11'},
+      {id:newId(),title:'Normalization method write-up',                    completedAt:null,dueDate:'2026-06-12'},
+      {id:newId(),title:'Normalization formula',                            completedAt:null,dueDate:'2026-06-12'},
+      {id:newId(),title:'Normalization script',                             completedAt:null,dueDate:'2026-06-13'},
+      // Phase 4 — Final outputs
+      {id:newId(),title:'Spatial join — all variables (script + output gpkg)', completedAt:null,dueDate:'2026-06-13'},
+      {id:newId(),title:'Geospatial cleaning — low population tracts, etc.',   completedAt:null,dueDate:'2026-06-14'},
+      {id:newId(),title:'Outlier presence/explanation write-up for all variables', completedAt:null,dueDate:'2026-06-15'},
+    ]
+  });
+}
+// ── End seed ─────────────────────────────────────────────────
+
+navigate('brief');
+</script>
+</body>
+</html>
