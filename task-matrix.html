@@ -180,7 +180,7 @@
     .grid-2col .sug-card { padding:9px 10px; }
     /* Today's Plate — category-column layout (mirrors suggestions, no height equalization) */
     .plate-cat-grid { display:flex; flex-wrap:wrap; align-items:flex-start; gap:5px; margin-top:8px; }
-    .plate-cat-grid .sug-cat-col { flex:1; min-width:calc(33% - 4px); }
+    .plate-cat-grid .sug-cat-col { flex:1; min-width:calc(50% - 4px); }
     .plate-cat-item { padding:6px 7px; border-bottom:1px solid var(--border); }
     .plate-cat-item:last-child { border-bottom:none; }
     .plate-cat-row  { display:flex; align-items:center; gap:4px; }
@@ -205,7 +205,7 @@
                  -webkit-tap-highlight-color:transparent; }
     .sug-title { font-size:14px; font-weight:500; margin-bottom:4px; line-height:1.3; }
     /* Suggestions category grid */
-    .sug-cat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:8px; }
+    .sug-cat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; margin-top:8px; }
     .sug-cat-col  { border:1px solid var(--border); border-radius:var(--r-sm);
                     padding:6px 5px; background:var(--surface); }
     .sug-cat-hd   { display:flex; align-items:center; gap:3px; padding:3px 5px 4px;
@@ -423,19 +423,18 @@
 // ═══════════════════════════════════════════════════════════
 
 const CATS = [
-  {id:'comp-admin',     name:'Computer · Admin',              emoji:'💻',color:'#1e6b7a'},
-  {id:'comp-creative',  name:'Computer · Creative',           emoji:'✨',color:'#9880dd'},
-  {id:'house',          name:'House · Cats · Garden',         emoji:'🏡',color:'#2e7a50'},
-  {id:'shopping',       name:'Shopping · Errands',            emoji:'🛍️',color:'#e0aa00'},
-  {id:'personal',       name:'Personal · Health',             emoji:'💚',color:'#c4504a'},
-  {id:'crafts-work',    name:'Crafts · Work',                 emoji:'🔧',color:'#3a5e92'},
-  {id:'crafts-creative',name:'Crafts · Creative',             emoji:'🎨',color:'#8b4a6e'},
-  {id:'media',          name:'Media · Learning',              emoji:'📚',color:'#1a9ba0'},
-  {id:'misc',           name:'Miscellaneous',                 emoji:'📌',color:'#7a9870'},
+  {id:'comp-admin',     name:'Computer · Work',     emoji:'💻',color:'#1a2d72'},
+  {id:'comp-creative',  name:'Computer · Personal', emoji:'🖥️',color:'#f5a828'},
+  {id:'house',          name:'Hands-On · Home',     emoji:'🏡',color:'#e83040'},
+  {id:'shopping',       name:'Errands · Shopping',  emoji:'🛒',color:'#38bdb0'},
+  {id:'personal',       name:'Health · Wellness',   emoji:'🩵',color:'#c81870'},
+  {id:'crafts-creative',name:'Creative · Hobbies',  emoji:'🎨',color:'#6aba30'},
 ];
+// Redirect old category IDs to the new 6-category set
+const CAT_ALIAS = {'crafts-work':'house','media':'crafts-creative','misc':'comp-creative'};
 
-// Display order for the Suggested grid (3×3)
-const SUG_CAT_ORDER = ['comp-admin','comp-creative','house','crafts-work','crafts-creative','personal','shopping','media','misc'];
+// Display order: 2-col grid, grouped by category type
+const SUG_CAT_ORDER = ['comp-admin','comp-creative','house','shopping','crafts-creative','personal'];
 
 const MEDS = [
   {id:'esc10',name:'ESC 10',full:'Lexapro',            type:'daily',   skippable:false,color:'#5BAD72'},
@@ -1653,7 +1652,7 @@ function viewBrief() {
     h+=`<div class="sec-row"><div class="sec-hd">Today's Plate</div>
           <button class="link-btn" data-a="clear-plate">clear</button></div>`;
     const plateByCat={};
-    todayPl.forEach(t=>{ const cid=t.category||'misc'; (plateByCat[cid]||(plateByCat[cid]=[])).push(t); });
+    todayPl.forEach(t=>{ const raw=t.category||'misc'; const cid=CAT_ALIAS[raw]||raw; (plateByCat[cid]||(plateByCat[cid]=[])).push(t); });
     const plateCatOrder=[...SUG_CAT_ORDER,...Object.keys(plateByCat).filter(c=>!SUG_CAT_ORDER.includes(c))];
     h+=`<div class="plate-cat-grid">`;
     plateCatOrder.forEach(cid=>{
@@ -1715,7 +1714,7 @@ function viewBrief() {
     h+=`<div class="sec-row" style="margin-top:36px"><div class="sec-hd">Suggested for today</div>
           <button class="link-btn" data-a="reset-ctx">change</button></div>`;
     const byCat={};
-    sug.forEach(t=>{ const cid=t.category||'misc'; (byCat[cid]||(byCat[cid]=[])).push(t); });
+    sug.forEach(t=>{ const raw=t.category||'misc'; const cid=CAT_ALIAS[raw]||raw; (byCat[cid]||(byCat[cid]=[])).push(t); });
     // Sort each category by effective due date (next incomplete step date, else task date)
     const effDate=t=>{
       if(t.chunks&&t.chunks.length){
