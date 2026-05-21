@@ -98,6 +98,11 @@
     .fire-btn-done { background:var(--fire-light); border-color:var(--fire); color:var(--fire); }
     .fire-btn-add  { background:var(--accent-light); border-color:var(--accent); color:var(--accent); }
     .fire-btn-skip { background:var(--surface); border-color:var(--border); color:var(--text-2); }
+    .snooze-row { display:flex; gap:4px; margin-top:4px; }
+    .snooze-btn { flex:1; padding:4px 2px; border-radius:6px; border:1px solid var(--border);
+                  font-size:11px; font-weight:500; cursor:pointer; text-align:center;
+                  background:var(--surface); color:var(--text-3);
+                  -webkit-tap-highlight-color:transparent; }
 
     /* Upcoming card */
     .upcoming-card { display:flex; align-items:center; gap:10px; background:var(--surface);
@@ -1337,6 +1342,25 @@ function skipRecurring(id) {
   save(); showToast(`Skipped — next: ${fmtNextDue(next)}`); rv();
 }
 
+function snoozeTask(id, type) {
+  const t=tasks.find(x=>x.id===id); if(!t) return;
+  const base = (t.recurrence ? t.nextDue : t.deadline) || todayStr();
+  let newDate;
+  if (type==='1d') {
+    const d=new Date(base+'T12:00:00'); d.setDate(d.getDate()+1);
+    newDate=d.toISOString().slice(0,10);
+  } else if (type==='1w') {
+    const d=new Date(base+'T12:00:00'); d.setDate(d.getDate()+7);
+    newDate=d.toISOString().slice(0,10);
+  } else if (type==='recur' && t.recurrence) {
+    newDate=calcNextDue(t.recurrence, base);
+  }
+  if (!newDate) return;
+  if (t.recurrence) t.nextDue=newDate; else t.deadline=newDate;
+  plate.ids=plate.ids.filter(x=>x!==id);
+  save(); showToast(`Snoozed to ${fmtNextDue(newDate)}`); rv();
+}
+
 function completeChunk(taskId, chunkId) {
   const t=tasks.find(x=>x.id===taskId); if(!t||!t.chunks) return;
   const ch=t.chunks.find(c=>c.id===chunkId); if(!ch) return;
@@ -1540,6 +1564,11 @@ function viewBrief() {
           <button class="fire-btn fire-btn-done" data-a="complete" data-id="${t.id}">${t.recurrence?'✓ Log ↻':'✓ Done'}</button>
           ${!onPlate?`<button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Today</button>`:''}
           ${t.recurrence?`<button class="fire-btn fire-btn-skip" data-a="skip-recur" data-id="${t.id}">Skip ↷</button>`:''}
+        </div>
+        <div class="snooze-row">
+          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
+          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
+          ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
         </div>
       </div>`;
     });
@@ -2230,6 +2259,7 @@ document.addEventListener('click', e=>{
     case 'close-recur-modal': closeCompleteRecurModal(); break;
     case 'skip-recur':      skipRecurring(id); break;
     case 'skip-recur-edit': closeEditModal(); skipRecurring(id); break;
+    case 'snooze':          snoozeTask(id, btn.dataset.snooze); break;
 
     case 'open-log-edit': openLogEditSheet(btn.dataset.type, id); break;
     case 'close-log-edit': closeLogEditModal(); break;
