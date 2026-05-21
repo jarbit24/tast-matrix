@@ -1526,7 +1526,7 @@ function medsSection() {
 // ═══════════════════════════════════════════════════════════
 
 function viewBrief() {
-  const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)))
+  const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)) && !plate.ids.includes(t.id))
                    .sort((a,b)=>(daysUntil(a.recurrence?a.nextDue:a.deadline)||0)-(daysUntil(b.recurrence?b.nextDue:b.deadline)||0));
   const todayPl = plateTasks();
   const sug     = getSuggestions();
