@@ -11,6 +11,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -23,7 +26,7 @@
       --r:14px; --r-sm:10px; --nav-h:68px; --sync-h:28px;
     }
     html,body { height:100%; background:var(--bg);
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;
+      font-family:'Google Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;
       color:var(--text); overflow:hidden; }
     #sync-bar { height:var(--sync-h); display:flex; align-items:center; justify-content:center;
       gap:8px; padding:0 12px; background:var(--surface-2); border-bottom:1px solid var(--border);
@@ -53,8 +56,8 @@
     .page-sub   { font-size:13px; color:var(--text-2); margin-bottom:16px; }
     .greeting   { font-size:22px; font-weight:700; margin-bottom:2px; }
     .date-str   { font-size:13px; color:var(--text-2); margin-bottom:14px; }
-    .sec-hd     { font-size:10px; font-weight:700; letter-spacing:.09em;
-                  text-transform:uppercase; color:var(--text-2); margin:20px 0 10px; }
+    .sec-hd     { font-size:16px; font-weight:700; letter-spacing:.04em;
+                  text-transform:uppercase; color:var(--text); margin:20px 0 10px; }
     .sec-row    { display:flex; justify-content:space-between; align-items:center; margin:20px 0 10px; }
     .sec-row .sec-hd { margin:0; }
     .link-btn   { font-size:12px; color:var(--accent); background:none; border:none;
@@ -160,7 +163,7 @@
     .chunk-more  { background:none; border:none; color:var(--accent); font-size:11px;
                    font-weight:500; cursor:pointer; padding:4px 0 2px; display:block;
                    -webkit-tap-highlight-color:transparent; }
-    .sug-cat-step { font-size:9px; color:var(--text-3); font-style:italic; margin-top:1px;
+    .sug-cat-step { font-size:11px; color:var(--text-3); font-style:italic; margin-top:1px;
                     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 
     /* Two-column brief grid */
@@ -173,10 +176,24 @@
     /* Upcoming cards narrow */
     .grid-2col .upcoming-card { flex-wrap:wrap; }
     .grid-2col .upcoming-info { flex-basis:100%; margin-bottom:4px; }
-    /* Plate items narrow */
-    .grid-2col .plate-item { padding:9px 10px; }
     /* Suggestion cards narrow */
     .grid-2col .sug-card { padding:9px 10px; }
+    /* Today's Plate — category-column layout (mirrors suggestions, no height equalization) */
+    .plate-cat-grid { display:flex; flex-wrap:wrap; align-items:flex-start; gap:5px; margin-top:8px; }
+    .plate-cat-grid .sug-cat-col { flex:1; min-width:calc(33% - 4px); }
+    .plate-cat-item { padding:6px 7px; border-bottom:1px solid var(--border); }
+    .plate-cat-item:last-child { border-bottom:none; }
+    .plate-cat-row  { display:flex; align-items:center; gap:4px; }
+    .plate-cat-ttl  { font-size:12px; font-weight:700; line-height:1.3; color:var(--text);
+                      letter-spacing:0.02em; background:none; border:none; padding:0; cursor:pointer;
+                      min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                      text-align:left; -webkit-tap-highlight-color:transparent; }
+    /* Steps + divider overrides inside plate */
+    .plate-cat-item .chunk-list  { border-top:none; margin-top:2px; padding-top:0; padding-left:20px; }
+    .plate-cat-item .chunk-item  { padding:3px 0; gap:5px; }
+    .plate-cat-item .chunk-ck    { width:14px; height:14px; font-size:9px; flex-shrink:0; }
+    .plate-cat-item .chunk-title { color:var(--text-2); font-size:11px; }
+    .plate-cat-item .chunk-due   { font-size:9px; }
 
     /* Suggestions */
     .sug-card  { display:flex; align-items:flex-start; gap:10px; background:var(--surface-2);
@@ -194,7 +211,7 @@
     .sug-cat-hd   { display:flex; align-items:center; gap:3px; padding:3px 5px 4px;
                     border-radius:5px; margin-bottom:2px; }
     .sug-cat-hd-emoji { font-size:11px; flex-shrink:0; }
-    .sug-cat-hd-name  { font-size:9px; font-weight:700; line-height:1.2;
+    .sug-cat-hd-name  { font-size:12px; font-weight:700; line-height:1.2;
                         white-space:normal; word-break:break-word; }
     .sug-cat-item { display:flex; align-items:flex-start; gap:4px;
                     padding:4px 0; border-top:1px solid var(--border); }
@@ -203,9 +220,9 @@
                     flex-shrink:0; display:flex; align-items:center; justify-content:center;
                     line-height:1; padding-bottom:1px; margin-top:1px;
                     -webkit-tap-highlight-color:transparent; }
-    .sug-cat-ttl  { font-size:11px; font-weight:500; line-height:1.3; color:var(--text);
+    .sug-cat-ttl  { font-size:13px; font-weight:500; line-height:1.3; color:var(--text);
                     background:none; border:none; padding:0; cursor:pointer; text-align:left; }
-    .sug-cat-dl   { font-size:9px; color:var(--text-3); margin-top:1px; }
+    .sug-cat-dl   { font-size:11px; color:var(--text-3); margin-top:1px; }
 
     /* Task card */
     .task-card { display:flex; align-items:flex-start; gap:10px; background:var(--surface);
@@ -407,17 +424,18 @@
 
 const CATS = [
   {id:'comp-admin',     name:'Computer · Admin',              emoji:'💻',color:'#1e6b7a'},
-  {id:'comp-creative',  name:'Computer · Creative',           emoji:'✨',color:'#9191e9',textColor:'#1a1a2e'},
-  {id:'house',          name:'House · Cats · Garden',         emoji:'🏡',color:'#357266'},
-  {id:'shopping',       name:'Shopping · Errands',            emoji:'🛍️',color:'#f2bb05',textColor:'#3a2d00'},
-  {id:'personal',       name:'Personal · Health',             emoji:'💚',color:'#4e9480'},
-  {id:'crafts-work',    name:'Crafts · Work',                 emoji:'🔧',color:'#636eaa'},
-  {id:'crafts-creative',name:'Crafts · Creative',             emoji:'🎨',color:'#4d8fbf'},
-  {id:'misc',           name:'Miscellaneous',                 emoji:'📌',color:'#a3bbad',textColor:'#2a3d32'},
+  {id:'comp-creative',  name:'Computer · Creative',           emoji:'✨',color:'#9880dd'},
+  {id:'house',          name:'House · Cats · Garden',         emoji:'🏡',color:'#2e7a50'},
+  {id:'shopping',       name:'Shopping · Errands',            emoji:'🛍️',color:'#e0aa00'},
+  {id:'personal',       name:'Personal · Health',             emoji:'💚',color:'#c4504a'},
+  {id:'crafts-work',    name:'Crafts · Work',                 emoji:'🔧',color:'#3a5e92'},
+  {id:'crafts-creative',name:'Crafts · Creative',             emoji:'🎨',color:'#8b4a6e'},
+  {id:'media',          name:'Media · Learning',              emoji:'📚',color:'#1a9ba0'},
+  {id:'misc',           name:'Miscellaneous',                 emoji:'📌',color:'#7a9870'},
 ];
 
-// Display order for the Suggested grid
-const SUG_CAT_ORDER = ['comp-admin','comp-creative','house','crafts-work','crafts-creative','personal','shopping','misc'];
+// Display order for the Suggested grid (3×3)
+const SUG_CAT_ORDER = ['comp-admin','comp-creative','house','crafts-work','crafts-creative','personal','shopping','media','misc'];
 
 const MEDS = [
   {id:'esc10',name:'ESC 10',full:'Lexapro',            type:'daily',   skippable:false,color:'#5BAD72'},
@@ -1498,7 +1516,7 @@ function metaRow(t) {
   const rlab=recurLabel(t.recurrence);
   return `<div class="task-meta">
     <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
-    ${dlTxt?`<span class="dl-tag ${dlClass(d)}">📅&thinsp;${dlTxt}</span>`:''}
+    ${dlTxt?`<span class="dl-tag ${dlClass(d)}">📅&nbsp;${dlTxt}</span>`:''}
     ${rlab?`<span class="recur-badge">${rlab}</span>`:''}
     <span class="meta-tag">⏱ ${TIME_LBL[t.time]}</span>
     <span class="meta-tag">⚡ ${EFFORT_SH[t.effort]}</span>
@@ -1537,7 +1555,7 @@ function chunkListHtml(t, inPlate=false) {
   }
   const rowsHtml = toRender.map(ch=>{
     const dBadge=ch.dueDate&&!ch.completedAt
-      ? (()=>{const d=daysUntil(ch.dueDate); return `<span class="chunk-due${d!==null&&d<0?' overdue':''}">📅&thinsp;${d===0?'today':fmtDateShort(ch.dueDate)}</span>`;})()
+      ? (()=>{const d=daysUntil(ch.dueDate); return `<span class="chunk-due${d!==null&&d<0?' overdue':''}">📅&nbsp;${d===0?'today':fmtDateShort(ch.dueDate)}</span>`;})()
       : '';
     return `<div class="chunk-item">
       <button class="chunk-ck ${ch.completedAt?'done':''}"
@@ -1630,35 +1648,49 @@ function viewBrief() {
   }
 
 
-  // Today's Plate
+  // Today's Plate — grouped by category (mirrors Suggested layout)
   if (todayPl.length) {
     h+=`<div class="sec-row"><div class="sec-hd">Today's Plate</div>
-          <button class="link-btn" data-a="clear-plate">clear</button></div><div class="grid-2col">`;
-    todayPl.forEach(t=>{
-      const c=getcat(t.category);
-      const prog=t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length}</span>`:'';
-      const plateDueDate = t.recurrence ? t.nextDue : t.deadline;
-      const plateDd = plateDueDate ? daysUntil(plateDueDate) : null;
-      const plateDlHtml = plateDd !== null
-        ? `<div style="margin:4px 0 2px"><span class="dl-tag ${dlClass(plateDd)}">📅&thinsp;${plateDd<0?Math.abs(plateDd)+'d overdue':plateDd===0?'today':fmtDateShort(plateDueDate)}</span></div>`
-        : '';
-      h+=`<div class="plate-item">
-        <div class="plate-header">
-          <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
-          <div class="plate-dot" style="background:${c.color}"></div>
-          <button style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:500;line-height:1.3;text-align:left;background:none;border:none;padding:0;cursor:pointer;color:var(--text)" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
-          ${prog}
-          ${t.recurrence?`<button class="plate-rm" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="font-size:13px">↷</button>`:''}
-          <button class="plate-rm" data-a="rm-plate" data-id="${t.id}">✕</button>
-        </div>
-        ${plateDlHtml}
-        <div class="snooze-row">
-          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
-          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
-          ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
-        </div>
-        ${chunkListHtml(t, true)}
-      </div>`;
+          <button class="link-btn" data-a="clear-plate">clear</button></div>`;
+    const plateByCat={};
+    todayPl.forEach(t=>{ const cid=t.category||'misc'; (plateByCat[cid]||(plateByCat[cid]=[])).push(t); });
+    const plateCatOrder=[...SUG_CAT_ORDER,...Object.keys(plateByCat).filter(c=>!SUG_CAT_ORDER.includes(c))];
+    h+=`<div class="plate-cat-grid">`;
+    plateCatOrder.forEach(cid=>{
+      const catTasks=plateByCat[cid]||[];
+      const cat=getcat(cid);
+      h+=`<div class="sug-cat-col">
+        <div class="sug-cat-hd" style="background:${cat.color}">
+          <span class="sug-cat-hd-emoji">${cat.emoji}</span>
+          <span class="sug-cat-hd-name" style="color:${cat.textColor||'white'}">${cat.name}</span>
+        </div>`;
+      catTasks.forEach(t=>{
+        const prog=t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length}</span>`:'';
+        const plateDueDate=t.recurrence?t.nextDue:t.deadline;
+        const plateDd=plateDueDate?daysUntil(plateDueDate):null;
+        const plateDlTag=plateDd!==null
+          ?`<span class="dl-tag ${dlClass(plateDd)}" style="flex-shrink:0;font-size:10px">📅&nbsp;${plateDd<0?Math.abs(plateDd)+'d overdue':plateDd===0?'today':fmtDateShort(plateDueDate)}</span>`
+          :'';
+        h+=`<div class="plate-cat-item">
+          <div class="plate-cat-row">
+            <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
+            <div style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;overflow:hidden">
+              <button class="plate-cat-ttl" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
+              ${plateDlTag}
+            </div>
+            ${prog}
+            ${t.recurrence?`<button class="plate-rm" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="font-size:11px">↷</button>`:''}
+            <button class="plate-rm" data-a="rm-plate" data-id="${t.id}">✕</button>
+          </div>
+          <div class="snooze-row">
+            <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
+            <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
+            ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
+          </div>
+          ${chunkListHtml(t, true)}
+        </div>`;
+      });
+      h+=`</div>`;
     });
     h+=`</div>`;
   }
@@ -1680,7 +1712,7 @@ function viewBrief() {
 
   // Suggestions
   if (ctxSet) {
-    h+=`<div class="sec-row"><div class="sec-hd">Suggested for today</div>
+    h+=`<div class="sec-row" style="margin-top:36px"><div class="sec-hd">Suggested for today</div>
           <button class="link-btn" data-a="reset-ctx">change</button></div>`;
     const byCat={};
     sug.forEach(t=>{ const cid=t.category||'misc'; (byCat[cid]||(byCat[cid]=[])).push(t); });
@@ -2086,7 +2118,9 @@ function openLogEditSheet(type, id) {
 }
 
 let _editClosedAt = 0;
-function closeEditModal(){const el=document.getElementById('edit-modal');if(el){el.remove();_editClosedAt=Date.now();}}
+let _editOpenedAt  = 0;
+let _blockActionsUntil = 0;
+function closeEditModal(){const el=document.getElementById('edit-modal');if(el){el.remove();_editClosedAt=Date.now();_blockActionsUntil=Date.now()+500;}}
 
 function syncEditChunkTitles() {
   document.querySelectorAll('[data-chunk-idx]').forEach(inp=>{
@@ -2126,6 +2160,7 @@ function renderEditChunks() {
 function openEditSheet(id) {
   if(Date.now()-_editClosedAt < 400) return; // ghost-click guard
   if(document.getElementById('edit-modal')) return;
+  _editOpenedAt = Date.now();
   const t=tasks.find(x=>x.id===id); if(!t) return;
   editChunks = t.chunks ? t.chunks.map(c=>({id:c.id,title:c.title,completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})) : [];
   const dateVal=t.recurrence?(t.nextDue||''):(t.deadline||'');
@@ -2195,7 +2230,7 @@ function openEditSheet(id) {
       }
     });
   });
-  el.addEventListener('click',e=>{if(e.target===el)closeEditModal();});
+  el.addEventListener('click',e=>{if(e.target===el && Date.now()-_editOpenedAt > 500)closeEditModal();});
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2255,6 +2290,7 @@ function rv() {
 
 document.addEventListener('click', e=>{
   const btn=e.target.closest('[data-a]'); if(!btn) return;
+  if(Date.now() < _blockActionsUntil) return; // block ghost-clicks after modal close
   const a=btn.dataset.a, id=btn.dataset.id;
 
   switch(a) {
