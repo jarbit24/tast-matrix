@@ -530,11 +530,40 @@ function forcePushToCloud() {
   showToast('Pushed local data to cloud ✓');
 }
 
+function forcePullFromCloud() {
+  if (!_db || !_currentUser) { showToast('Not signed in'); return; }
+  _db.collection('users').doc(_currentUser.uid).collection('data').doc('state').get()
+    .then(snap => {
+      if (!snap.exists) { showToast('No cloud data found'); return; }
+      const d = snap.data();
+      tasks    = d.tasks    || [];
+      medLogs  = d.medLogs  || [];
+      recurLog = d.recurLog || [];
+      settings = d.settings || {seasonalMeds:{bloom:false}};
+      const today = todayStr();
+      if (d.plate && d.plate.date === today) plate = d.plate;
+      if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
+      try {
+        localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
+        localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
+        localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
+        localStorage.setItem('tm_settings', JSON.stringify(settings));
+        localStorage.setItem('tm_plate',    JSON.stringify(plate));
+        localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
+        localStorage.setItem('tm_savedAt',  (d.savedAt||0).toString());
+      } catch(e){}
+      rv();
+      showToast('Pulled latest data from cloud ✓');
+    })
+    .catch(e => showToast('Pull failed: ' + e.message));
+}
+
 function _updateSyncBar() {
   const bar = document.getElementById('sync-bar');
   if (!bar) return;
   if (_currentUser) {
     bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)}</span>`
+      + `<button class="sync-btn sync-signout" onclick="forcePullFromCloud()" title="Force pull latest data from cloud">↓ pull</button>`
       + `<button class="sync-btn sync-signout" onclick="forcePushToCloud()" title="Force push local data to cloud">↑ push</button>`
       + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
   } else {
