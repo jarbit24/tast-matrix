@@ -1637,43 +1637,6 @@ function viewBrief() {
           ${medsSection()}`;
 
 
-  // 🔥 Urgent (overdue + today)
-  if (urgent.length) {
-    h+=`<div class="sec-hd" style="color:var(--fire)">🔥 Due today</div><div class="grid-2col">`;
-    urgent.forEach(t=>{
-      const d=daysUntil(t.recurrence?t.nextDue:t.deadline);
-      const dtxt=d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':'';
-      const bc=d<=0?'overdue':'';
-      const c=getcat(t.category);
-      const rlab=recurLabel(t.recurrence);
-      const onPlate=plate.ids.includes(t.id);
-      h+=`<div class="fire-card">
-        <div class="fire-top">
-          <div class="fire-title">${titleLink(t)}</div>
-          <button class="task-edit-btn" data-a="open-edit" data-id="${t.id}" title="Edit">✎</button>
-          <span class="days-badge ${dlClass(d)}">${dtxt}</span>
-        </div>
-        <div class="task-meta" style="margin-bottom:4px">
-          <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
-          ${rlab?`<span class="recur-badge">${rlab}</span>`:''}
-          ${t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length} steps</span>`:''}
-        </div>
-        ${descLine(t)}
-        ${chunkListHtml(t)}
-        <div class="fire-btns">
-          <button class="fire-btn fire-btn-done" data-a="complete" data-id="${t.id}">${t.recurrence?'✓ Log ↻':'✓ Done'}</button>
-          ${!onPlate?`<button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Today</button>`:''}
-          ${t.recurrence?`<button class="fire-btn fire-btn-skip" data-a="skip-recur" data-id="${t.id}">Skip ↷</button>`:''}
-        </div>
-        <div class="snooze-row">
-          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
-          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
-          ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
-        </div>
-      </div>`;
-    });
-    h+=`</div>`;
-  }
 
 
   // Today's Plate — always show 6 category columns (mirrors Suggested layout)
