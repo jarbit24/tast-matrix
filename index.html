@@ -1676,10 +1676,10 @@ function viewBrief() {
   }
 
 
-  // Today's Plate — grouped by category (mirrors Suggested layout)
-  if (todayPl.length) {
+  // Today's Plate — always show 6 category columns (mirrors Suggested layout)
+  {
     h+=`<div class="sec-row"><div class="sec-hd">Today's Plate</div>
-          <button class="link-btn" data-a="clear-plate">clear</button></div>`;
+          ${todayPl.length?`<button class="link-btn" data-a="clear-plate">clear</button>`:''}</div>`;
     const plateByCat={};
     todayPl.forEach(t=>{ const raw=t.category||'misc'; const cid=CAT_ALIAS[raw]||raw; (plateByCat[cid]||(plateByCat[cid]=[])).push(t); });
     const plateCatOrder=[...SUG_CAT_ORDER,...Object.keys(plateByCat).filter(c=>!SUG_CAT_ORDER.includes(c))];
