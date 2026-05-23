@@ -254,6 +254,10 @@
     .dl-overdue { color:#c0392b; }
     .recur-badge{ font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px;
                   background:var(--surface-2); color:var(--text-2); white-space:nowrap; }
+    .score-badge { font-size:10px; font-weight:700; padding:2px 5px; border-radius:5px;
+                   align-self:center; flex-shrink:0; font-variant-numeric:tabular-nums; }
+    .score-pos   { background:var(--accent-light); color:var(--accent); }
+    .score-neg   { background:var(--surface-2); color:var(--text-3); }
     .add-plate-btn { width:30px; height:30px; border-radius:8px; border:1px solid var(--accent);
                      background:var(--accent-light); color:var(--accent); font-size:18px;
                      cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -1538,6 +1542,58 @@ function removeFromPlate(id){ plate.ids=plate.ids.filter(x=>x!==id);save();rv();
 const activeTasks  = () => tasks.filter(t=>!t.completedAt);
 const plateTasks   = () => plate.ids.map(id=>tasks.find(t=>t.id===id)).filter(Boolean).filter(t=>!t.completedAt);
 
+function scoreTask(t) {
+  const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
+  if(!tOpt||!eOpt) return null;
+  let score=0;
+
+  // ── Step due date urgency (highest weight) ──────────────
+  if(t.chunks){
+    t.chunks.filter(c=>!c.completedAt).forEach(c=>{
+      if(!c.dueDate) return;
+      const d=daysUntil(c.dueDate);
+      if(d===null) return;
+      if(d<0)       score+=120;
+      else if(d===0) score+=90;
+      else if(d<=3)  score+=60;
+      else if(d<=7)  score+=30;
+      else if(d<=14) score+=10;
+    });
+    const pendingWithDates=t.chunks.filter(c=>!c.completedAt&&c.dueDate).length;
+    score+=Math.min(pendingWithDates*4,20);
+  }
+
+  // ── Task-level deadline proximity ────────────────────────
+  const dueDate=t.recurrence?t.nextDue:t.deadline;
+  if(dueDate){
+    const d=daysUntil(dueDate);
+    if(d!==null){
+      if(d<0)        score+=80;
+      else if(d===0)  score+=60;
+      else if(d<=3)   score+=40;
+      else if(d<=7)   score+=25;
+      else if(d<=14)  score+=15;
+      else if(d<=30)  score+=5;
+    }
+  }
+
+  // ── Time investment fit ──────────────────────────────────
+  if(tOpt.levels.includes(t.time))  score+=25;
+  else score-=30;
+
+  // ── Effort / energy fit ──────────────────────────────────
+  if(eOpt.levels.includes(t.effort)) score+=15;
+  else score-=20;
+
+  // ── Number of remaining steps (complexity signal) ────────
+  if(t.chunks){
+    const remaining=t.chunks.filter(c=>!c.completedAt).length;
+    score+=Math.min(remaining*2,12);
+  }
+
+  return score;
+}
+
 function getSuggestions() {
   const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
   if(!tOpt||!eOpt) return [];
@@ -1545,58 +1601,8 @@ function getSuggestions() {
   const fireSet=new Set(activeTasks().filter(t=>briefStatus(t)).map(t=>t.id));
   const cands=activeTasks().filter(t=>!plateSet.has(t.id)&&!fireSet.has(t.id));
 
-  const scored=cands.map(t=>{
-    let score=0;
-
-    // ── Step due date urgency (highest weight) ──────────────
-    if(t.chunks){
-      t.chunks.filter(c=>!c.completedAt).forEach(c=>{
-        if(!c.dueDate) return;
-        const d=daysUntil(c.dueDate);
-        if(d===null) return;
-        if(d<0)       score+=120;
-        else if(d===0) score+=90;
-        else if(d<=3)  score+=60;
-        else if(d<=7)  score+=30;
-        else if(d<=14) score+=10;
-      });
-      // more pending steps with dates = more momentum needed
-      const pendingWithDates=t.chunks.filter(c=>!c.completedAt&&c.dueDate).length;
-      score+=Math.min(pendingWithDates*4,20);
-    }
-
-    // ── Task-level deadline proximity ────────────────────────
-    const dueDate=t.recurrence?t.nextDue:t.deadline;
-    if(dueDate){
-      const d=daysUntil(dueDate);
-      if(d!==null){
-        if(d<0)        score+=80;
-        else if(d===0)  score+=60;
-        else if(d<=3)   score+=40;
-        else if(d<=7)   score+=25;
-        else if(d<=14)  score+=15;
-        else if(d<=30)  score+=5;
-      }
-    }
-
-    // ── Time investment fit ──────────────────────────────────
-    if(tOpt.levels.includes(t.time))  score+=25;
-    else score-=30; // task too big for available time
-
-    // ── Effort / energy fit ──────────────────────────────────
-    if(eOpt.levels.includes(t.effort)) score+=15;
-    else score-=20;
-
-    // ── Number of remaining steps (complexity signal) ────────
-    if(t.chunks){
-      const remaining=t.chunks.filter(c=>!c.completedAt).length;
-      score+=Math.min(remaining*2,12);
-    }
-
-    return {t,score};
-  });
-
-  return scored
+  return cands
+    .map(t=>({t, score:scoreTask(t)}))
     .filter(x=>x.score>0)
     .sort((a,b)=>b.score-a.score)
     .slice(0,8)
@@ -2068,6 +2074,10 @@ function viewBacklog() {
 function taskRow(t) {
   const c=getcat(t.category);
   const onPlate=plate.ids.includes(t.id);
+  const sc=scoreTask(t);
+  const scoreBadge=sc!==null
+    ? `<span class="score-badge ${sc>0?'score-pos':'score-neg'}" title="Suggestion score">${sc}</span>`
+    : '';
   return `<div class="task-card" data-title="${esc(t.title.toLowerCase())}">
     <button class="task-ck" data-a="complete" data-id="${t.id}"></button>
     <div class="task-body">
@@ -2075,6 +2085,7 @@ function taskRow(t) {
       ${metaRow(t)}
       ${descLine(t)}
     </div>
+    ${scoreBadge}
     <button class="task-edit-btn" data-a="open-edit" data-id="${t.id}" title="Edit" style="align-self:center">✎</button>
     ${t.recurrence?`<button class="task-edit-btn" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="align-self:center;font-size:13px">↷</button>`:''}
     ${!onPlate
