@@ -2231,7 +2231,9 @@ let _editOpenedAt  = 0;
 let _blockActionsUntil = 0;
 function closeEditModal(){const el=document.getElementById('edit-modal');if(el){el.remove();_editClosedAt=Date.now();_blockActionsUntil=Date.now()+500;}}
 
-function doSaveEdit(id) {
+function doSaveEdit(id, btn) {
+  if(btn && btn.disabled) return; // prevent double-tap
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; btn.style.background='#4a9e6a'; }
   const t=tasks.find(x=>x.id===id); if(!t){closeEditModal();return;}
   const title=(document.getElementById('et-title')?.value||'').trim();
   if(!title){showToast('Title required');return;}
@@ -2343,7 +2345,7 @@ function openEditSheet(id) {
       </div>
     </div>
     <div style="padding:8px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid var(--border)">
-      <button type="button" class="modal-done" onclick="doSaveEdit('${id}')">Save</button>
+      <button type="button" class="modal-done" onclick="doSaveEdit('${id}', this)">Save</button>
       ${t.recurrence?`<button type="button" class="edit-del" style="background:var(--surface);color:var(--text-2);border-color:var(--border)" data-a="skip-recur-edit" data-id="${id}">Skip ↷ to next occurrence</button>`:''}
       <button type="button" class="edit-del" data-a="delete-task" data-id="${id}">Delete task</button>
       <button type="button" class="edit-cancel" data-a="close-edit">Cancel</button>
