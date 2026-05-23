@@ -394,6 +394,40 @@
                    color:white; border:none; border-radius:var(--r-sm); font-size:15px;
                    font-weight:700; cursor:pointer; }
 
+    /* Projects */
+    .proj-card   { background:var(--surface); border-radius:var(--r); box-shadow:var(--shadow);
+                   margin-bottom:16px; overflow:hidden; }
+    .proj-hd     { display:flex; align-items:center; gap:10px; padding:13px 14px 11px;
+                   border-bottom:1px solid var(--border); }
+    .proj-dot    { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .proj-name   { font-size:15px; font-weight:700; flex:1; }
+    .proj-count  { font-size:11px; color:var(--text-3); }
+    .proj-add-btn{ font-size:12px; color:var(--accent); background:none; border:none;
+                   cursor:pointer; font-weight:600; padding:0 4px;
+                   -webkit-tap-highlight-color:transparent; }
+    .proj-del-btn{ font-size:12px; color:var(--text-3); background:none; border:none;
+                   cursor:pointer; padding:0 4px; -webkit-tap-highlight-color:transparent; }
+    .phase-section { padding:0 0 6px; }
+    .phase-hd    { display:flex; align-items:center; gap:8px; padding:9px 14px 5px;
+                   background:var(--surface-2); }
+    .phase-name  { font-size:12px; font-weight:700; text-transform:uppercase;
+                   letter-spacing:.05em; color:var(--text-2); flex:1; }
+    .phase-add-task { font-size:12px; color:var(--accent); background:none; border:none;
+                      cursor:pointer; font-weight:600; -webkit-tap-highlight-color:transparent; }
+    .phase-del   { font-size:11px; color:var(--text-3); background:none; border:none;
+                   cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    .proj-task-row { display:flex; align-items:center; gap:8px; padding:8px 14px;
+                     border-top:1px solid var(--border); }
+    .proj-task-ck { width:18px; height:18px; border-radius:50%; border:2px solid var(--border);
+                    background:none; cursor:pointer; flex-shrink:0; font-size:9px; color:transparent;
+                    -webkit-tap-highlight-color:transparent; }
+    .proj-task-title { flex:1; font-size:13px; font-weight:500; line-height:1.3; }
+    .proj-task-dl { font-size:10px; font-weight:600; padding:2px 5px; border-radius:4px;
+                    background:var(--surface-2); flex-shrink:0; }
+    .proj-task-edit { font-size:14px; color:var(--text-3); background:none; border:none;
+                      cursor:pointer; padding:3px 4px; -webkit-tap-highlight-color:transparent; }
+    .proj-add-phase-row { padding:8px 14px; }
+
     /* Empty */
     .empty { text-align:center; padding:40px 16px; color:var(--text-2); }
     .empty-ico { font-size:42px; margin-bottom:10px; }
@@ -416,10 +450,11 @@
 </div>
 <div id="app"></div>
 <nav id="nav">
-  <button class="nav-btn active" data-nav="brief" ><span class="ni">🌅</span>Today</button>
-  <button class="nav-btn"        data-nav="add"   ><span class="ni">➕</span>Add</button>
-  <button class="nav-btn"        data-nav="backlog"><span class="ni">📋</span>Tasks</button>
-  <button class="nav-btn"        data-nav="log"   ><span class="ni">📜</span>Log</button>
+  <button class="nav-btn active" data-nav="brief"   ><span class="ni">🌅</span>Today</button>
+  <button class="nav-btn"        data-nav="add"     ><span class="ni">➕</span>Add</button>
+  <button class="nav-btn"        data-nav="backlog" ><span class="ni">📋</span>Tasks</button>
+  <button class="nav-btn"        data-nav="projects"><span class="ni">📁</span>Projects</button>
+  <button class="nav-btn"        data-nav="log"     ><span class="ni">📜</span>Log</button>
 </nav>
 <div id="toast"></div>
 
@@ -506,6 +541,7 @@ function initSync() {
           medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
           settings = d.settings || {seasonalMeds:{bloom:false}};
+          projects = d.projects || [];
           const today = todayStr();
           if (d.plate && d.plate.date === today) plate = d.plate;
           if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
@@ -517,6 +553,7 @@ function initSync() {
             localStorage.setItem('tm_settings', JSON.stringify(settings));
             localStorage.setItem('tm_plate',    JSON.stringify(plate));
             localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
+            localStorage.setItem('tm_projects', JSON.stringify(projects));
             localStorage.setItem('tm_savedAt',  cloudSavedAt.toString());
           } catch(e){}
           rv();
@@ -532,7 +569,7 @@ function _pushToCloud() {
   const savedAt = Date.now();
   localStorage.setItem('tm_savedAt', savedAt.toString());
   _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-    .set({tasks, medLogs, recurLog, settings, plate, ctx, savedAt});
+    .set({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt});
 }
 
 function forcePushToCloud() {
@@ -553,6 +590,7 @@ function forcePullFromCloud() {
       medLogs  = d.medLogs  || [];
       recurLog = d.recurLog || [];
       settings = d.settings || {seasonalMeds:{bloom:false}};
+      projects = d.projects || [];
       const today = todayStr();
       if (d.plate && d.plate.date === today) plate = d.plate;
       if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
@@ -563,6 +601,7 @@ function forcePullFromCloud() {
         localStorage.setItem('tm_settings', JSON.stringify(settings));
         localStorage.setItem('tm_plate',    JSON.stringify(plate));
         localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
+        localStorage.setItem('tm_projects', JSON.stringify(projects));
         localStorage.setItem('tm_savedAt',  (d.savedAt||0).toString());
       } catch(e){}
       _syncConflict = false;
@@ -610,12 +649,13 @@ function signOutGoogle() {
 //  STATE
 // ═══════════════════════════════════════════════════════════
 
-let tasks    = [];   // {id,title,category,time,effort,deadline,leadTime,recurrence,nextDue,chunks,createdAt,completedAt}
+let tasks    = [];   // {id,title,category,time,effort,deadline,leadTime,recurrence,nextDue,chunks,createdAt,completedAt,projectId?,phaseId?}
 let medLogs  = [];   // {id,medId,takenAt}
 let recurLog = [];   // {id,taskId,title,completedAt} — history of recurring task completions
 let settings = {seasonalMeds:{bloom:false}};
 let plate    = {date:'',ids:[]};
 let ctx      = {date:'',time:null,energy:null};
+let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
 const expandedChunks = new Set(); // task IDs with chunk list expanded in plate view
 let curView  = 'brief';
 let bFilter    = 'all';
@@ -640,7 +680,14 @@ let AF = {
 const todayStr  = () => new Date().toLocaleDateString('en-CA');
 const newId     = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc       = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const titleLink = t => t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener" class="task-link">${esc(t.title)}</a>` : esc(t.title);
+const titleLink = t => {
+  let dispTitle = t.title;
+  if (t.projectId) {
+    const proj = projects.find(p=>p.id===t.projectId);
+    if (proj) dispTitle = proj.title + ' — ' + t.title;
+  }
+  return t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener" class="task-link">${esc(dispTitle)}</a>` : esc(dispTitle);
+};
 const descLine  = t => t.description ? `<div class="task-desc">${esc(t.description)}</div>` : '';
 const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
 const getcat    = id => CATS.find(c=>c.id===id)||CATS[CATS.length-1];
@@ -1271,13 +1318,14 @@ function save() {
     localStorage.setItem('tm_settings', JSON.stringify(settings));
     localStorage.setItem('tm_plate',    JSON.stringify(plate));
     localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
+    localStorage.setItem('tm_projects', JSON.stringify(projects));
     localStorage.setItem('tm_savedAt',  savedAt.toString());
   } catch(e){}
   // Cloud sync (no-op if not signed in)
   if (_db && _currentUser) {
     const savedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
     _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-      .set({tasks, medLogs, recurLog, settings, plate, ctx, savedAt}).catch(()=>{});
+      .set({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt}).catch(()=>{});
   }
 }
 
@@ -1289,6 +1337,7 @@ function load() {
     settings = JSON.parse(localStorage.getItem('tm_settings')||'{"seasonalMeds":{"bloom":false}}');
     plate    = JSON.parse(localStorage.getItem('tm_plate')  ||'{"date":"","ids":[]}');
     ctx      = JSON.parse(localStorage.getItem('tm_ctx')    ||'{"date":"","time":null,"energy":null}');
+    projects = JSON.parse(localStorage.getItem('tm_projects')||'[]');
     const today = todayStr();
     if (plate.date!==today) plate={date:today,ids:[]};
     if (ctx.date  !==today) ctx  ={date:today,time:null,energy:null};
@@ -2280,10 +2329,221 @@ function openEditSheet(id) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  VIEW: PROJECTS
+// ═══════════════════════════════════════════════════════════
+
+function viewProjects() {
+  let h = `<div class="page-title">Projects</div>`;
+  h += `<button class="submit-btn" style="margin-bottom:16px" data-a="new-project">+ New Project</button>`;
+
+  if (!projects.length) {
+    h += `<div class="empty"><div class="empty-ico">📁</div>
+      <div class="empty-txt">No projects yet.<br>Tap New Project to get started.</div></div>`;
+    return h;
+  }
+
+  projects.forEach(proj => {
+    const cat = getcat(proj.category);
+    const projTasks = activeTasks().filter(t => t.projectId === proj.id);
+    const totalTasks = tasks.filter(t => t.projectId === proj.id);
+    const doneCount = totalTasks.filter(t => t.completedAt).length;
+
+    h += `<div class="proj-card">
+      <div class="proj-hd">
+        <div class="proj-dot" style="background:${cat.color}"></div>
+        <span class="proj-name">${esc(proj.title)}</span>
+        <span class="proj-count">${doneCount}/${totalTasks.length} done</span>
+        <button class="proj-add-btn" data-a="add-phase" data-pid="${proj.id}">+ Phase</button>
+        <button class="proj-del-btn" data-a="delete-project" data-pid="${proj.id}">✕</button>
+      </div>`;
+
+    const phases = proj.phases || [];
+
+    // Unphased tasks (no phaseId)
+    const unphasedTasks = projTasks.filter(t => !t.phaseId);
+
+    if (phases.length === 0 && unphasedTasks.length === 0) {
+      h += `<div class="proj-add-phase-row">
+        <button class="proj-add-btn" data-a="add-proj-task" data-pid="${proj.id}" data-phid="">+ Add task</button>
+      </div>`;
+    }
+
+    // Render each phase
+    phases.forEach(phase => {
+      const phaseTasks = projTasks.filter(t => t.phaseId === phase.id);
+      h += `<div class="phase-section">
+        <div class="phase-hd">
+          <span class="phase-name">${esc(phase.title)}</span>
+          <button class="phase-add-task" data-a="add-proj-task" data-pid="${proj.id}" data-phid="${phase.id}">+ task</button>
+          <button class="phase-del" data-a="delete-phase" data-pid="${proj.id}" data-phid="${phase.id}">✕</button>
+        </div>`;
+      phaseTasks.forEach(t => {
+        const dl = t.deadline ? daysUntil(t.deadline) : null;
+        const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(t.deadline)) : '';
+        const dlCls = dl !== null ? dlClass(dl) : '';
+        h += `<div class="proj-task-row">
+          <button class="proj-task-ck" data-a="complete" data-id="${t.id}"></button>
+          <span class="proj-task-title">${esc(t.title)}</span>
+          ${dlTxt ? `<span class="proj-task-dl ${dlCls}">📅 ${dlTxt}</span>` : ''}
+          <button class="proj-task-edit" data-a="open-edit" data-id="${t.id}">✎</button>
+        </div>`;
+      });
+      if (!phaseTasks.length) {
+        h += `<div style="padding:8px 14px;font-size:12px;color:var(--text-3);font-style:italic">No tasks yet</div>`;
+      }
+      h += `</div>`;
+    });
+
+    // Unphased tasks section (if phases exist and there are unphased tasks)
+    if (phases.length > 0) {
+      h += `<div class="proj-add-phase-row">
+        <button class="proj-add-btn" data-a="add-proj-task" data-pid="${proj.id}" data-phid="">+ Add task (no phase)</button>
+      </div>`;
+      unphasedTasks.forEach(t => {
+        const dl = t.deadline ? daysUntil(t.deadline) : null;
+        const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(t.deadline)) : '';
+        const dlCls = dl !== null ? dlClass(dl) : '';
+        h += `<div class="proj-task-row">
+          <button class="proj-task-ck" data-a="complete" data-id="${t.id}"></button>
+          <span class="proj-task-title">${esc(t.title)}</span>
+          ${dlTxt ? `<span class="proj-task-dl ${dlCls}">📅 ${dlTxt}</span>` : ''}
+          <button class="proj-task-edit" data-a="open-edit" data-id="${t.id}">✎</button>
+        </div>`;
+      });
+    }
+
+    h += `</div>`;
+  });
+
+  return h;
+}
+
+// ── Project modals ───────────────────────────────────────────
+
+function closeProjectModal()     { const el=document.getElementById('proj-modal');    if(el) el.remove(); }
+function closePhaseModal()       { const el=document.getElementById('phase-modal');   if(el) el.remove(); }
+function closeProjTaskModal()    { const el=document.getElementById('ptask-modal');   if(el) el.remove(); }
+
+function openNewProjectModal() {
+  if(document.getElementById('proj-modal')) return;
+  const el=document.createElement('div');
+  el.id='proj-modal'; el.className='modal-ov';
+  const catOpts=CATS.map(c=>`<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
+  el.innerHTML=`<div class="modal-sheet">
+    <div class="modal-title">New Project</div>
+    <label class="edit-label">Project name</label>
+    <input class="edit-field" id="np-title" placeholder="Project name…" autocomplete="off">
+    <label class="edit-label">Category</label>
+    <select class="edit-field" id="np-cat">${catOpts}</select>
+    <button class="modal-done" data-a="do-create-project">Create Project</button>
+    <button class="edit-cancel" data-a="close-proj-modal">Cancel</button>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click',e=>{if(e.target===el)closeProjectModal();});
+  setTimeout(()=>document.getElementById('np-title')?.focus(),80);
+}
+
+function doCreateProject() {
+  const title=(document.getElementById('np-title')?.value||'').trim();
+  if(!title){showToast('Name required');return;}
+  const cat=document.getElementById('np-cat')?.value||'comp-admin';
+  projects.push({id:newId(),title,category:cat,createdAt:new Date().toISOString(),phases:[]});
+  save(); closeProjectModal(); rv(); showToast('Project created ✓');
+}
+
+function openNewPhaseModal(projId) {
+  if(document.getElementById('phase-modal')) return;
+  const el=document.createElement('div');
+  el.id='phase-modal'; el.className='modal-ov';
+  el.innerHTML=`<div class="modal-sheet">
+    <div class="modal-title">New Phase</div>
+    <label class="edit-label">Phase name</label>
+    <input class="edit-field" id="nph-title" placeholder="e.g. Research, Build, Review…" autocomplete="off">
+    <button class="modal-done" data-a="do-create-phase" data-pid="${projId}">Add Phase</button>
+    <button class="edit-cancel" data-a="close-phase-modal">Cancel</button>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click',e=>{if(e.target===el)closePhaseModal();});
+  setTimeout(()=>document.getElementById('nph-title')?.focus(),80);
+}
+
+function doCreatePhase(projId) {
+  const title=(document.getElementById('nph-title')?.value||'').trim();
+  if(!title){showToast('Name required');return;}
+  const proj=projects.find(p=>p.id===projId); if(!proj) return;
+  proj.phases=proj.phases||[];
+  proj.phases.push({id:newId(),title});
+  save(); closePhaseModal(); rv(); showToast('Phase added ✓');
+}
+
+function openAddProjectTaskModal(projId, phaseId) {
+  if(document.getElementById('ptask-modal')) return;
+  const proj=projects.find(p=>p.id===projId);
+  const phase=phaseId?(proj?.phases||[]).find(ph=>ph.id===phaseId):null;
+  const sub=phase?`${esc(proj?.title||'')} — ${esc(phase.title)}`:(proj?esc(proj.title):'');
+  const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
+  const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
+  const el=document.createElement('div');
+  el.id='ptask-modal'; el.className='modal-ov';
+  el.innerHTML=`<div class="modal-sheet" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
+    <div style="overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;padding:20px 16px 8px">
+      <div class="modal-title">Add Task</div>
+      ${sub?`<div style="font-size:12px;color:var(--text-2);text-align:center;margin:-8px 0 14px">${sub}</div>`:''}
+      <label class="edit-label">Task title</label>
+      <input class="edit-field" id="pt-title" placeholder="Task title…" autocomplete="off">
+      <label class="edit-label">Notes <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
+      <textarea class="edit-field" id="pt-desc" rows="2" placeholder="Notes…" style="resize:vertical;min-height:50px"></textarea>
+      <label class="edit-label">Link <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
+      <input class="edit-field" id="pt-link" type="url" placeholder="https://…">
+      <label class="edit-label">Deadline <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
+      <input class="edit-field" id="pt-deadline" type="date">
+      <label class="edit-label">Time needed</label>
+      <div class="edit-pills">${timePills}</div>
+      <label class="edit-label">Effort</label>
+      <div class="edit-pills">${effortPills}</div>
+    </div>
+    <div style="padding:8px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid var(--border)">
+      <button type="button" class="modal-done" onclick="doCreateProjectTask('${projId}','${phaseId||''}')">Add Task</button>
+      <button type="button" class="edit-cancel" data-a="close-ptask-modal">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+  el.querySelectorAll('[data-et]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      el.querySelectorAll(`[data-et="${b.dataset.et}"]`).forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel');
+    });
+  });
+  el.addEventListener('click',e=>{if(e.target===el)closeProjTaskModal();});
+  setTimeout(()=>document.getElementById('pt-title')?.focus(),80);
+}
+
+function doCreateProjectTask(projId, phaseId) {
+  const title=(document.getElementById('pt-title')?.value||'').trim();
+  if(!title){showToast('Title required');return;}
+  const desc=(document.getElementById('pt-desc')?.value||'').trim()||undefined;
+  const link=(document.getElementById('pt-link')?.value||'').trim()||undefined;
+  const deadline=document.getElementById('pt-deadline')?.value||null;
+  const el=document.getElementById('ptask-modal');
+  const time=el?.querySelector('[data-et="pt-time"].sel')?.dataset.v||'medium';
+  const effort=el?.querySelector('[data-et="pt-effort"].sel')?.dataset.v||'medium';
+  const proj=projects.find(p=>p.id===projId);
+  if(!proj){showToast('Project not found');return;}
+  tasks.push({
+    id:newId(), title, category:proj.category,
+    time, effort, deadline, recurrence:null, nextDue:null,
+    chunks:null, createdAt:new Date().toISOString(), completedAt:null,
+    projectId:projId, phaseId:phaseId||undefined,
+    description:desc, link,
+  });
+  save(); closeProjTaskModal(); rv(); showToast('Task added ✓');
+}
+
+// ═══════════════════════════════════════════════════════════
 //  NAVIGATION & RENDER
 // ═══════════════════════════════════════════════════════════
 
-const VIEWS={brief:viewBrief,add:viewAdd,backlog:viewBacklog,log:viewLog};
+const VIEWS={brief:viewBrief,add:viewAdd,backlog:viewBacklog,projects:viewProjects,log:viewLog};
 
 function navigate(v) {
   if(v!=='backlog') bSearch='';
@@ -2485,6 +2745,36 @@ document.addEventListener('click', e=>{
         if(t&&t.chunks) { const ch=t.chunks.find(c=>c.id===btn.dataset.cid); if(ch) ch.completedAt=null; }
         recurLog=recurLog.filter(x=>x.id!==id);
       }
+      save(); rv(); break;
+    }
+
+    case 'new-project':      openNewProjectModal(); break;
+    case 'close-proj-modal': closeProjectModal(); break;
+    case 'do-create-project': doCreateProject(); break;
+
+    case 'add-phase':       openNewPhaseModal(btn.dataset.pid); break;
+    case 'close-phase-modal': closePhaseModal(); break;
+    case 'do-create-phase': doCreatePhase(btn.dataset.pid); break;
+
+    case 'add-proj-task':    openAddProjectTaskModal(btn.dataset.pid, btn.dataset.phid); break;
+    case 'close-ptask-modal': closeProjTaskModal(); break;
+
+    case 'delete-project': {
+      const proj=projects.find(p=>p.id===btn.dataset.pid);
+      if(!proj) break;
+      if(!confirm(`Delete project "${proj.title}"? Tasks will remain in the backlog (without project label).`)) break;
+      tasks.forEach(t=>{ if(t.projectId===btn.dataset.pid){delete t.projectId;delete t.phaseId;} });
+      projects=projects.filter(p=>p.id!==btn.dataset.pid);
+      save(); rv(); break;
+    }
+
+    case 'delete-phase': {
+      const proj=projects.find(p=>p.id===btn.dataset.pid); if(!proj) break;
+      const phase=(proj.phases||[]).find(ph=>ph.id===btn.dataset.phid);
+      if(!phase) break;
+      if(!confirm(`Delete phase "${phase.title}"? Tasks in this phase will remain (as unphased).`)) break;
+      tasks.forEach(t=>{ if(t.phaseId===btn.dataset.phid) delete t.phaseId; });
+      proj.phases=proj.phases.filter(ph=>ph.id!==btn.dataset.phid);
       save(); rv(); break;
     }
 
