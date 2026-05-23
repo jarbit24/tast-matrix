@@ -2131,6 +2131,35 @@ let _editOpenedAt  = 0;
 let _blockActionsUntil = 0;
 function closeEditModal(){const el=document.getElementById('edit-modal');if(el){el.remove();_editClosedAt=Date.now();_blockActionsUntil=Date.now()+500;}}
 
+function doSaveEdit(id) {
+  const t=tasks.find(x=>x.id===id); if(!t){closeEditModal();return;}
+  const title=(document.getElementById('et-title')?.value||'').trim();
+  if(!title){showToast('Title required');return;}
+  t.title=title;
+  t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
+  t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
+  t.category=document.getElementById('et-cat')?.value||t.category;
+  const dateInp=document.getElementById('et-date');
+  if(dateInp!=null){
+    if(t.recurrence) t.nextDue=dateInp.value||t.nextDue;
+    else t.deadline=dateInp.value||null;
+  }
+  t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
+  t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
+  if(t.time==='low'){
+    t.chunks=null;
+  } else {
+    syncEditChunkTitles();
+    const saved=editChunks.filter(c=>(c.title||'').trim());
+    t.chunks=saved.length?saved.map(c=>({id:c.id||newId(),title:(c.title||'').trim(),completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})):null;
+    if(!t.recurrence && t.chunks){
+      const stepDates=t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
+      if(stepDates.length && !dateInp?.value) t.deadline=stepDates[stepDates.length-1];
+    }
+  }
+  save(); closeEditModal(); showToast('Saved ✓'); rv();
+}
+
 function syncEditChunkTitles() {
   document.querySelectorAll('[data-chunk-idx]').forEach(inp=>{
     const i=parseInt(inp.dataset.chunkIdx);
@@ -2210,7 +2239,7 @@ function openEditSheet(id) {
       </div>
     </div>
     <div style="padding:8px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid var(--border)">
-      <button type="button" class="modal-done" data-a="save-edit" data-id="${id}">Save</button>
+      <button type="button" class="modal-done" onclick="doSaveEdit('${id}')">Save</button>
       ${t.recurrence?`<button type="button" class="edit-del" style="background:var(--surface);color:var(--text-2);border-color:var(--border)" data-a="skip-recur-edit" data-id="${id}">Skip ↷ to next occurrence</button>`:''}
       <button type="button" class="edit-del" data-a="delete-task" data-id="${id}">Delete task</button>
       <button type="button" class="edit-cancel" data-a="close-edit">Cancel</button>
@@ -2255,6 +2284,7 @@ const VIEWS={brief:viewBrief,add:viewAdd,backlog:viewBacklog,log:viewLog};
 function navigate(v) {
   if(v!=='backlog') bSearch='';
   curView=v;
+  try{localStorage.setItem('tm_curView',v);}catch(e){}
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===v));
   rv();
   document.getElementById('app').scrollTop=0;
@@ -2549,7 +2579,7 @@ if(!tasks.find(t=>t.title==='GGVI')) {
 }
 // ── End seed ─────────────────────────────────────────────────
 
-navigate('brief');
+navigate(localStorage.getItem('tm_curView')||'brief');
 </script>
 </body>
 </html>
