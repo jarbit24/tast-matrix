@@ -31,9 +31,12 @@
     #sync-bar { height:var(--sync-h); display:flex; align-items:center; justify-content:center;
       gap:8px; padding:0 12px; background:var(--surface-2); border-bottom:1px solid var(--border);
       font-size:11px; color:var(--text-2); flex-shrink:0; }
-    .sync-ok    { color:var(--text-2); }
-    .sync-btn   { background:none; border:none; cursor:pointer; font-size:11px; padding:3px 8px;
-                  border-radius:6px; }
+    .sync-ok       { color:var(--text-2); }
+    .sync-conflict { color:#c85000; font-weight:600; }
+    .sync-btn      { background:none; border:none; cursor:pointer; font-size:11px; padding:3px 8px;
+                     border-radius:6px; }
+    .sync-push     { color:#c85000; border:1px solid #c85000; }
+    .sync-pull     { color:#1a7a4a; border:1px solid #1a7a4a; }
     .sync-signin  { color:var(--accent); font-weight:600; }
     .sync-signout { color:var(--text-3); }
     #app { height:calc(100dvh - var(--nav-h) - var(--sync-h)); overflow-y:auto;
@@ -466,7 +469,7 @@ const FB_CONFIG = {
   appId:             "1:441740578783:web:2009c34fa627bd29b83e6a"
 };
 
-let _db = null, _currentUser = null, _fbUnsub = null;
+let _db = null, _currentUser = null, _fbUnsub = null, _syncConflict = false;
 
 function initSync() {
   if (!FB_CONFIG.apiKey || FB_CONFIG.apiKey === 'REPLACE_ME') return;
@@ -490,7 +493,12 @@ function initSync() {
           // Timestamp-based conflict resolution: newer save always wins
           const cloudSavedAt = d.savedAt || 0;
           const localSavedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
-          if (localSavedAt > cloudSavedAt) { _pushToCloud(); return; } // local is newer
+          if (localSavedAt > cloudSavedAt) {
+            // Local is newer than cloud — don't auto-overwrite. Show conflict warning instead.
+            _syncConflict = true;
+            _updateSyncBar();
+            return;
+          }
           tasks    = d.tasks    || [];
           medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
@@ -526,7 +534,9 @@ function _pushToCloud() {
 
 function forcePushToCloud() {
   if (!_currentUser) { showToast('Not signed in'); return; }
+  _syncConflict = false;
   _pushToCloud();
+  _updateSyncBar();
   showToast('Pushed local data to cloud ✓');
 }
 
@@ -552,6 +562,8 @@ function forcePullFromCloud() {
         localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
         localStorage.setItem('tm_savedAt',  (d.savedAt||0).toString());
       } catch(e){}
+      _syncConflict = false;
+      _updateSyncBar();
       rv();
       showToast('Pulled latest data from cloud ✓');
     })
@@ -562,10 +574,16 @@ function _updateSyncBar() {
   const bar = document.getElementById('sync-bar');
   if (!bar) return;
   if (_currentUser) {
-    bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)}</span>`
-      + `<button class="sync-btn sync-signout" onclick="forcePullFromCloud()" title="Force pull latest data from cloud">↓ pull</button>`
-      + `<button class="sync-btn sync-signout" onclick="forcePushToCloud()" title="Force push local data to cloud">↑ push</button>`
-      + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
+    if (_syncConflict) {
+      bar.innerHTML = `<span class="sync-conflict">⚠ Local data is newer than cloud</span>`
+        + `<button class="sync-btn sync-push" onclick="forcePushToCloud()" title="Overwrite cloud with your local data">↑ push local</button>`
+        + `<button class="sync-btn sync-pull" onclick="forcePullFromCloud()" title="Replace local data with cloud data">↓ pull cloud</button>`;
+    } else {
+      bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)}</span>`
+        + `<button class="sync-btn sync-signout" onclick="forcePullFromCloud()" title="Force pull latest data from cloud">↓ pull</button>`
+        + `<button class="sync-btn sync-signout" onclick="forcePushToCloud()" title="Force push local data to cloud">↑ push</button>`
+        + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
+    }
   } else {
     bar.innerHTML = `<button class="sync-btn sync-signin" onclick="signInWithGoogle()">☁ Sign in with Google to sync across devices</button>`;
   }
@@ -2161,38 +2179,42 @@ function openEditSheet(id) {
   const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${t.effort===v?' sel':''}" data-et="effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
   const el=document.createElement('div');
   el.id='edit-modal'; el.className='modal-ov';
-  el.innerHTML=`<div class="modal-sheet">
-    <div class="modal-title">Edit task</div>
-    <label class="edit-label">Title</label>
-    <input class="edit-field" id="et-title" value="${esc(t.title)}" placeholder="Task title">
-    <label class="edit-label">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
-    <textarea class="edit-field" id="et-desc" rows="3" placeholder="Additional info, context…" style="resize:vertical;min-height:60px">${esc(t.description||'')}</textarea>
-    <label class="edit-label">Link <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional — title becomes a hyperlink</span></label>
-    <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
-    <label class="edit-label">Category</label>
-    <select class="edit-field" id="et-cat">${cats}</select>
-    ${dateVal!==''?`<label class="edit-label">${dateLabel}</label>
-    <input class="edit-field" id="et-date" type="date" value="${dateVal}">
-    <div class="snooze-row">
-      <button class="snooze-btn" data-snooze="1">+1d</button>
-      <button class="snooze-btn" data-snooze="3">+3d</button>
-      <button class="snooze-btn" data-snooze="7">+1w</button>
-      <button class="snooze-btn" data-snooze="14">+2w</button>
-    </div>`:''}
-    <label class="edit-label">Time needed</label>
-    <div class="edit-pills">${timePills}</div>
-    <label class="edit-label">Effort</label>
-    <div class="edit-pills">${effortPills}</div>
-    <div id="edit-steps-section" style="${t.time==='low'?'display:none':''}">
-      <label class="edit-label" style="margin-top:4px">Steps <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
-      <div id="edit-chunks-list"></div>
-      <button id="edit-add-chunk" style="background:none;border:none;color:var(--accent);font-size:13px;
-              font-weight:600;cursor:pointer;padding:4px 0 12px;text-align:left;width:100%">+ Add step</button>
+  el.innerHTML=`<div class="modal-sheet" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
+    <div style="overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;padding:20px 16px 8px">
+      <div class="modal-title">Edit task</div>
+      <label class="edit-label">Title</label>
+      <input class="edit-field" id="et-title" value="${esc(t.title)}" placeholder="Task title">
+      <label class="edit-label">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+      <textarea class="edit-field" id="et-desc" rows="3" placeholder="Additional info, context…" style="resize:vertical;min-height:60px">${esc(t.description||'')}</textarea>
+      <label class="edit-label">Link <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional — title becomes a hyperlink</span></label>
+      <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
+      <label class="edit-label">Category</label>
+      <select class="edit-field" id="et-cat">${cats}</select>
+      ${dateVal!==''?`<label class="edit-label">${dateLabel}</label>
+      <input class="edit-field" id="et-date" type="date" value="${dateVal}">
+      <div class="snooze-row">
+        <button type="button" class="snooze-btn" data-snooze="1">+1d</button>
+        <button type="button" class="snooze-btn" data-snooze="3">+3d</button>
+        <button type="button" class="snooze-btn" data-snooze="7">+1w</button>
+        <button type="button" class="snooze-btn" data-snooze="14">+2w</button>
+      </div>`:''}
+      <label class="edit-label">Time needed</label>
+      <div class="edit-pills">${timePills}</div>
+      <label class="edit-label">Effort</label>
+      <div class="edit-pills">${effortPills}</div>
+      <div id="edit-steps-section" style="${t.time==='low'?'display:none':''}">
+        <label class="edit-label" style="margin-top:4px">Steps <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+        <div id="edit-chunks-list"></div>
+        <button id="edit-add-chunk" type="button" style="background:none;border:none;color:var(--accent);font-size:13px;
+                font-weight:600;cursor:pointer;padding:4px 0 12px;text-align:left;width:100%">+ Add step</button>
+      </div>
     </div>
-    <button class="modal-done" data-a="save-edit" data-id="${id}">Save</button>
-    ${t.recurrence?`<button class="edit-del" style="background:var(--surface);color:var(--text-2);border-color:var(--border)" data-a="skip-recur-edit" data-id="${id}">Skip ↷ to next occurrence</button>`:''}
-    <button class="edit-del" data-a="delete-task" data-id="${id}">Delete task</button>
-    <button class="edit-cancel" data-a="close-edit">Cancel</button>
+    <div style="padding:8px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid var(--border)">
+      <button type="button" class="modal-done" data-a="save-edit" data-id="${id}">Save</button>
+      ${t.recurrence?`<button type="button" class="edit-del" style="background:var(--surface);color:var(--text-2);border-color:var(--border)" data-a="skip-recur-edit" data-id="${id}">Skip ↷ to next occurrence</button>`:''}
+      <button type="button" class="edit-del" data-a="delete-task" data-id="${id}">Delete task</button>
+      <button type="button" class="edit-cancel" data-a="close-edit">Cancel</button>
+    </div>
   </div>`;
   document.body.appendChild(el);
   renderEditChunks();
