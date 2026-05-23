@@ -231,6 +231,10 @@
     .task-card { display:flex; align-items:flex-start; gap:10px; background:var(--surface);
                  border-radius:var(--r-sm); padding:11px 12px; box-shadow:var(--shadow);
                  margin-bottom:7px; }
+    /* grid layout for backlog */
+    .task-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(155px, 1fr)); gap:7px; margin-bottom:14px; }
+    .task-grid .task-card { flex-wrap:wrap; align-content:flex-start; margin-bottom:0; row-gap:4px; }
+    .task-grid .task-edit-btn { margin-left:auto; }
     .task-ck   { width:22px; height:22px; border-radius:50%; border:2px solid var(--border);
                  background:none; cursor:pointer; flex-shrink:0; margin-top:1px;
                  -webkit-tap-highlight-color:transparent; }
@@ -1945,17 +1949,16 @@ function viewBacklog() {
   if (!filtered.length) {
     body=`<div class="empty"><div class="empty-ico">📭</div><div class="empty-txt">Nothing here yet!</div></div>`;
   } else if (bSort==='date') {
-    // flat list sorted by due date; date dividers only when all/no category filter
+    // flat list sorted by due date
     const sorted=[...filtered].sort(byDate);
-    if (bFilter==='all') {
-      // show a thin category label inline instead of full headers
-      sorted.forEach(t=>{body+=taskRow(t);});
-    } else {
-      sorted.forEach(t=>{body+=taskRow(t);});
-    }
+    body+=`<div class="task-grid">`;
+    sorted.forEach(t=>{body+=taskRow(t);});
+    body+=`</div>`;
   } else if (bFilter!=='all') {
     // single category, default order
+    body+=`<div class="task-grid">`;
     filtered.forEach(t=>{body+=taskRow(t);});
+    body+=`</div>`;
   } else {
     // grouped by category, sorted by date within each group
     CATS.forEach(c=>{
@@ -1963,7 +1966,9 @@ function viewBacklog() {
       if(!ct.length) return;
       body+=`<div class="cat-hd"><div class="cat-dot" style="background:${c.color}"></div>
                <div class="cat-hd-name">${c.emoji} ${c.name}</div><div class="cat-hd-ct">${ct.length}</div></div>`;
+      body+=`<div class="task-grid">`;
       ct.forEach(t=>{body+=taskRow(t);});
+      body+=`</div>`;
     });
   }
   const searchBar=`<div class="b-search-wrap">
@@ -2295,14 +2300,15 @@ function applyBacklogSearch(q) {
   document.querySelectorAll('.task-card').forEach(card=>{
     card.style.display=(!term||card.dataset.title.includes(term))?'':'none';
   });
-  // hide category headers whose tasks are all hidden
+  // hide task-grid containers where all cards are hidden
+  document.querySelectorAll('.task-grid').forEach(grid=>{
+    const hasVis=[...grid.querySelectorAll('.task-card')].some(c=>c.style.display!=='none');
+    grid.style.display=hasVis?'':'none';
+  });
+  // hide category headers whose grid is fully hidden
   document.querySelectorAll('.cat-hd').forEach(hd=>{
-    let sib=hd.nextElementSibling, hasVis=false;
-    while(sib && !sib.classList.contains('cat-hd')){
-      if(sib.classList.contains('task-card') && sib.style.display!=='none') hasVis=true;
-      sib=sib.nextElementSibling;
-    }
-    hd.style.display=hasVis?'':'none';
+    const grid=hd.nextElementSibling;
+    hd.style.display=(grid&&grid.classList.contains('task-grid')&&grid.style.display!=='none')?'':'none';
   });
 }
 
