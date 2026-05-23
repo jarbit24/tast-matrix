@@ -450,12 +450,11 @@
 </div>
 <div id="app"></div>
 <nav id="nav">
-  <button class="nav-btn active" data-nav="brief"      ><span class="ni">🌅</span>Today</button>
-  <button class="nav-btn"        data-nav="backlog"    ><span class="ni">📋</span>Tasks</button>
-  <button class="nav-btn"        data-nav="projects"   ><span class="ni">📁</span>Projects</button>
-  <button class="nav-btn"        data-nav="log"        ><span class="ni">📜</span>Log</button>
-  <button class="nav-btn"        data-nav="add"        ><span class="ni">➕</span>Add task</button>
-  <button class="nav-btn"        data-nav="add-project"><span class="ni">✦</span>Add proj</button>
+  <button class="nav-btn active" data-nav="brief"   ><span class="ni">🌅</span>Today</button>
+  <button class="nav-btn"        data-nav="backlog" ><span class="ni">📋</span>Tasks</button>
+  <button class="nav-btn"        data-nav="projects"><span class="ni">📁</span>Projects</button>
+  <button class="nav-btn"        data-nav="log"     ><span class="ni">📜</span>Log</button>
+  <button class="nav-btn"        data-nav="add"     ><span class="ni">➕</span>Add</button>
 </nav>
 <div id="toast"></div>
 
@@ -493,6 +492,7 @@ const TIME_LBL    = {low:'0–30 min',medium:'30m–2hr',high:'2+ hrs'};
 const EFFORT_LBL  = {low:'💤 Light',medium:'⚡ Medium',high:'🔥 Heavy'};
 const EFFORT_SH   = {low:'light',medium:'medium',high:'heavy'};
 const WEEKDAYS    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const PROJ_PALETTE = ['#7B9E87','#5A7FB5','#C2624F','#C9A227','#9B7FD4','#38BDB0','#E8773A','#6aba30'];
 const ORDINALS    = [{v:'1',label:'first'},{v:'2',label:'second'},{v:'3',label:'third'},{v:'4',label:'fourth'},{v:'-1',label:'last'}];
 
 // ═══════════════════════════════════════════════════════════
@@ -662,6 +662,7 @@ let curView  = 'brief';
 let bFilter    = 'all';
 let bSort      = 'cat'; // 'cat' | 'date'
 let bSearch    = '';
+let addTab     = 'task'; // 'task' | 'project'
 let editChunks = [];   // live chunk state while edit sheet is open
 
 // Add-form state (survives re-renders)
@@ -1856,7 +1857,29 @@ function syncAF() {
 //  VIEW: ADD
 // ═══════════════════════════════════════════════════════════
 
+function doCreateProjectFromAdd() {
+  const title=(document.getElementById('ap-title')?.value||'').trim();
+  if(!title){showToast('Name required');return;}
+  const color=PROJ_PALETTE[projects.length % PROJ_PALETTE.length];
+  projects.push({id:newId(),title,color,createdAt:new Date().toISOString(),phases:[]});
+  save(); showToast('Project created ✓'); navigate('projects');
+}
+
 function viewAdd() {
+  const tabs = `<div class="tab-pair" style="margin-bottom:18px">
+    <button class="tab-btn ${addTab==='task'?'sel':''}" data-a="set-add-tab" data-v="task">➕ Add task</button>
+    <button class="tab-btn ${addTab==='project'?'sel':''}" data-a="set-add-tab" data-v="project">📁 Add project</button>
+  </div>`;
+
+  if (addTab === 'project') {
+    return `<div class="page-title">Add</div>${tabs}
+      <div class="form-group">
+        <label class="form-label">Project name</label>
+        <input id="ap-title" class="form-input" type="text" placeholder="Project name…" autocomplete="off">
+      </div>
+      <button class="submit-btn" data-a="submit-project">Create Project</button>`;
+  }
+
   const bigTask = AF.time==='medium' || AF.time==='high';
   const showChunkHint = bigTask && !AF.showChunks && AF.chunks.length===0;
 
@@ -1919,7 +1942,8 @@ function viewAdd() {
     </div>`;
 
   return `
-    <div class="page-title">Add Task</div>
+    <div class="page-title">Add</div>
+    ${tabs}
     <div class="page-sub">Goes straight to the backlog</div>
 
     <div class="form-group">
@@ -2344,14 +2368,14 @@ function viewProjects() {
   }
 
   projects.forEach(proj => {
-    const cat = getcat(proj.category);
+    const projColor = proj.color || '#7B9E87';
     const projTasks = activeTasks().filter(t => t.projectId === proj.id);
     const totalTasks = tasks.filter(t => t.projectId === proj.id);
     const doneCount = totalTasks.filter(t => t.completedAt).length;
 
     h += `<div class="proj-card">
       <div class="proj-hd">
-        <div class="proj-dot" style="background:${cat.color}"></div>
+        <div class="proj-dot" style="background:${projColor}"></div>
         <span class="proj-name">${esc(proj.title)}</span>
         <span class="proj-count">${doneCount}/${totalTasks.length} done</span>
         <button class="proj-add-btn" data-a="add-phase" data-pid="${proj.id}">+ Phase</button>
@@ -2429,13 +2453,10 @@ function openNewProjectModal() {
   if(document.getElementById('proj-modal')) return;
   const el=document.createElement('div');
   el.id='proj-modal'; el.className='modal-ov';
-  const catOpts=CATS.map(c=>`<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   el.innerHTML=`<div class="modal-sheet">
     <div class="modal-title">New Project</div>
     <label class="edit-label">Project name</label>
     <input class="edit-field" id="np-title" placeholder="Project name…" autocomplete="off">
-    <label class="edit-label">Category</label>
-    <select class="edit-field" id="np-cat">${catOpts}</select>
     <button class="modal-done" data-a="do-create-project">Create Project</button>
     <button class="edit-cancel" data-a="close-proj-modal">Cancel</button>
   </div>`;
@@ -2447,8 +2468,8 @@ function openNewProjectModal() {
 function doCreateProject() {
   const title=(document.getElementById('np-title')?.value||'').trim();
   if(!title){showToast('Name required');return;}
-  const cat=document.getElementById('np-cat')?.value||'comp-admin';
-  projects.push({id:newId(),title,category:cat,createdAt:new Date().toISOString(),phases:[]});
+  const color=PROJ_PALETTE[projects.length % PROJ_PALETTE.length];
+  projects.push({id:newId(),title,color,createdAt:new Date().toISOString(),phases:[]});
   save(); closeProjectModal(); rv(); showToast('Project created ✓');
 }
 
@@ -2482,7 +2503,7 @@ function openAddProjectTaskModal(projId, phaseId) {
   const proj=projects.find(p=>p.id===projId);
   const phase=phaseId?(proj?.phases||[]).find(ph=>ph.id===phaseId):null;
   const sub=phase?`${esc(proj?.title||'')} — ${esc(phase.title)}`:(proj?esc(proj.title):'');
-  const defaultCat=proj?.category||'comp-admin';
+  const defaultCat='comp-admin';
   const catOpts=CATS.map(c=>`<option value="${c.id}"${c.id===defaultCat?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
   const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
   const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
@@ -2580,8 +2601,10 @@ function applyBacklogSearch(q) {
 function rv() {
   document.getElementById('app').innerHTML=`<div class="view">${(VIEWS[curView]||viewBrief)()}</div>`;
   if (curView==='add') {
-    const ti=document.getElementById('f-title');
-    if(ti){ ti.value=AF.title; ti.addEventListener('input',e=>AF.title=e.target.value); }
+    if (addTab==='task') {
+      const ti=document.getElementById('f-title');
+      if(ti){ ti.value=AF.title; ti.addEventListener('input',e=>AF.title=e.target.value); }
+    }
   }
   if (curView==='backlog') {
     const si=document.getElementById('b-search');
@@ -2660,6 +2683,12 @@ document.addEventListener('click', e=>{
 
     case 'rm-chunk':
       syncAF(); AF.chunks=AF.chunks.filter(c=>c.id!==btn.dataset.cid); rv(); break;
+
+    case 'set-add-tab':
+      syncAF(); addTab=btn.dataset.v; rv(); break;
+
+    case 'submit-project':
+      doCreateProjectFromAdd(); break;
 
     case 'submit-task': {
       syncAF();
@@ -2824,9 +2853,7 @@ document.addEventListener('click', e=>{
 });
 
 document.getElementById('nav').addEventListener('click', e=>{
-  const b=e.target.closest('[data-nav]'); if(!b) return;
-  if(b.dataset.nav==='add-project') { openNewProjectModal(); return; }
-  navigate(b.dataset.nav);
+  const b=e.target.closest('[data-nav]'); if(b) navigate(b.dataset.nav);
 });
 
 // ═══════════════════════════════════════════════════════════
