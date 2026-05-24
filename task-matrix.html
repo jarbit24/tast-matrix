@@ -2438,12 +2438,6 @@ function viewProjectDetail(projId) {
     <button class="proj-add-btn" data-a="add-phase" data-pid="${proj.id}">+ Phase</button>
   </div>`;
 
-  if (phases.length === 0 && unphasedTasks.length === 0) {
-    h += `<div class="proj-add-phase-row">
-      <button class="proj-add-btn" data-a="add-proj-task" data-pid="${proj.id}" data-phid="">+ Add task</button>
-    </div>`;
-  }
-
   phases.forEach(phase => {
     const phaseTasks = projTasks.filter(t => t.phaseId === phase.id);
     h += `<div class="phase-section">
@@ -2469,22 +2463,21 @@ function viewProjectDetail(projId) {
     h += `</div>`;
   });
 
-  if (phases.length > 0) {
-    h += `<div class="proj-add-phase-row">
-      <button class="proj-add-btn" data-a="add-proj-task" data-pid="${proj.id}" data-phid="">+ Add task (no phase)</button>
+  // Unphased tasks — always render (whether or not phases exist)
+  h += `<div class="proj-add-phase-row">
+    <button class="proj-add-btn" data-a="add-proj-task" data-pid="${proj.id}" data-phid="">+ Add task${phases.length ? ' (no phase)' : ''}</button>
+  </div>`;
+  unphasedTasks.forEach(t => {
+    const dl = t.deadline ? daysUntil(t.deadline) : null;
+    const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(t.deadline)) : '';
+    const dlCls = dl !== null ? dlClass(dl) : '';
+    h += `<div class="proj-task-row">
+      <button class="proj-task-ck" data-a="complete" data-id="${t.id}"></button>
+      <span class="proj-task-title">${esc(t.title)}</span>
+      ${dlTxt ? `<span class="proj-task-dl ${dlCls}">📅 ${dlTxt}</span>` : ''}
+      <button class="proj-task-edit" data-a="open-edit" data-id="${t.id}">✎</button>
     </div>`;
-    unphasedTasks.forEach(t => {
-      const dl = t.deadline ? daysUntil(t.deadline) : null;
-      const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(t.deadline)) : '';
-      const dlCls = dl !== null ? dlClass(dl) : '';
-      h += `<div class="proj-task-row">
-        <button class="proj-task-ck" data-a="complete" data-id="${t.id}"></button>
-        <span class="proj-task-title">${esc(t.title)}</span>
-        ${dlTxt ? `<span class="proj-task-dl ${dlCls}">📅 ${dlTxt}</span>` : ''}
-        <button class="proj-task-edit" data-a="open-edit" data-id="${t.id}">✎</button>
-      </div>`;
-    });
-  }
+  });
 
   return h;
 }
