@@ -1862,7 +1862,7 @@ function syncAF() {
   if(g('f-week'))    AF.recurWeek=g('f-week').value;
   if(g('f-weekday')) AF.recurWeekday=g('f-weekday').value;
   if(g('f-moint'))   AF.recurMonthInterval=g('f-moint').value;
-  if(g('f-cat'))     AF.category=g('f-cat').value;
+  if(g('f-cat'))     AF.category=g('f-cat').value||null;
   document.querySelectorAll('.chunk-inp').forEach(inp=>{
     const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
     if(ch) ch.title=inp.value;
@@ -1972,8 +1972,9 @@ function viewAdd() {
     </div>
 
     <div class="form-group">
-      <label class="form-label">Category</label>
+      <label class="form-label">Category <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
       <select id="f-cat" class="form-select">
+        <option value="" ${!AF.category?'selected':''}>— Uncategorized —</option>
         ${CATS.map(c=>`<option value="${c.id}" ${AF.category===c.id?'selected':''}>${c.emoji} ${c.name}</option>`).join('')}
       </select>
     </div>
@@ -2018,7 +2019,7 @@ function viewAdd() {
 
 function viewBacklog() {
   const all=activeTasks();
-  const catFiltered=bFilter==='all'?all:all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===bFilter;});
+  const catFiltered=bFilter==='all'?all:bFilter==='_none'?all.filter(t=>{const r=t.category||'';const res=CAT_ALIAS[r]||r;return !res||!CATS.find(c=>c.id===res);}):all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===bFilter;});
   const filtered=bProjectFilter?catFiltered.filter(t=>!!t.projectId):catFiltered;
   const projCount=all.filter(t=>!!t.projectId).length;
 
@@ -2033,6 +2034,7 @@ function viewBacklog() {
   const chips=`<div class="filter-row">
     <button class="fchip ${bFilter==='all'?'on':''}" data-a="fcat" data-cat="all">All (${all.length})</button>
     ${CATS.map(c=>{const n=all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===c.id;}).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
+    ${(()=>{const n=all.filter(t=>{const r=t.category||'';const res=CAT_ALIAS[r]||r;return !res||!CATS.find(c=>c.id===res);}).length;return n?`<button class="fchip ${bFilter==='_none'?'on':''}" data-a="fcat" data-cat="_none">📌 ${n}</button>`:''})()}
     ${projCount?`<button class="fchip ${bProjectFilter?'on':''}" data-a="toggle-proj-filter">📁 Projects (${projCount})</button>`:''}
   </div>`;
   const sortRow=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
@@ -2339,7 +2341,7 @@ function openEditSheet(id) {
   editChunks = t.chunks ? t.chunks.map(c=>({id:c.id,title:c.title,completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})) : [];
   const dateVal=t.recurrence?(t.nextDue||''):(t.deadline||'');
   const dateLabel=t.recurrence?'Next due':'Deadline';
-  const cats=CATS.map(c=>`<option value="${c.id}"${t.category===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
+  const cats=`<option value=""${!t.category?' selected':''}>— Uncategorized —</option>`+CATS.map(c=>`<option value="${c.id}"${t.category===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
   const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${t.time===v?' sel':''}" data-et="time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
   const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${t.effort===v?' sel':''}" data-et="effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
   const el=document.createElement('div');
@@ -2569,7 +2571,7 @@ function openAddProjectTaskModal(projId, phaseId) {
   const phase=phaseId?(proj?.phases||[]).find(ph=>ph.id===phaseId):null;
   const sub=phase?`${esc(proj?.title||'')} — ${esc(phase.title)}`:(proj?esc(proj.title):'');
   const defaultCat='comp-admin';
-  const catOpts=CATS.map(c=>`<option value="${c.id}"${c.id===defaultCat?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
+  const catOpts=`<option value="" selected>— Uncategorized —</option>`+CATS.map(c=>`<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
   const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
   const el=document.createElement('div');
@@ -2647,7 +2649,7 @@ function doCreateProjectTask(projId, phaseId, btn) {
   const title=(document.getElementById('pt-title')?.value||'').trim();
   if(!title){showToast('Title required');if(btn){btn.disabled=false;btn.textContent='Add Task';btn.style.background='';}return;}
   try {
-  const category=document.getElementById('pt-cat')?.value||'comp-admin';
+  const category=document.getElementById('pt-cat')?.value||null;
   const desc=(document.getElementById('pt-desc')?.value||'').trim()||undefined;
   const link=(document.getElementById('pt-link')?.value||'').trim()||undefined;
   const el=document.getElementById('ptask-modal');
