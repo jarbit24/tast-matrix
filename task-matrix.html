@@ -2477,8 +2477,9 @@ function viewProjectDetail(projId) {
         <button class="phase-del" data-a="delete-phase" data-pid="${proj.id}" data-phid="${phase.id}">✕</button>
       </div>`;
     phaseTasks.forEach(t => {
-      const dl = t.deadline ? daysUntil(t.deadline) : null;
-      const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(t.deadline)) : '';
+      const dueDate = t.recurrence ? t.nextDue : t.deadline;
+      const dl = dueDate ? daysUntil(dueDate) : null;
+      const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(dueDate)) : '';
       const dlCls = dl !== null ? dlClass(dl) : '';
       h += `<div class="proj-task-row">
         <button class="proj-task-ck" data-a="complete" data-id="${t.id}"></button>
@@ -2498,8 +2499,9 @@ function viewProjectDetail(projId) {
     <button class="proj-add-btn" data-a="add-proj-task" data-pid="${proj.id}" data-phid="">+ Add task${phases.length ? ' (no phase)' : ''}</button>
   </div>`;
   unphasedTasks.forEach(t => {
-    const dl = t.deadline ? daysUntil(t.deadline) : null;
-    const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(t.deadline)) : '';
+    const dueDate = t.recurrence ? t.nextDue : t.deadline;
+    const dl = dueDate ? daysUntil(dueDate) : null;
+    const dlTxt = dl !== null ? (dl < 0 ? `${Math.abs(dl)}d over` : dl === 0 ? 'today' : fmtDateShort(dueDate)) : '';
     const dlCls = dl !== null ? dlClass(dl) : '';
     h += `<div class="proj-task-row">
       <button class="proj-task-ck" data-a="complete" data-id="${t.id}"></button>
