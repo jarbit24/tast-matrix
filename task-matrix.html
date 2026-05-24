@@ -2329,14 +2329,14 @@ function openEditSheet(id) {
       <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
       <label class="edit-label">Category</label>
       <select class="edit-field" id="et-cat">${cats}</select>
-      ${dateVal!==''?`<label class="edit-label">${dateLabel}</label>
+      <label class="edit-label">${dateLabel} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
       <input class="edit-field" id="et-date" type="date" value="${dateVal}">
       <div class="snooze-row">
         <button type="button" class="snooze-btn" data-snooze="1">+1d</button>
         <button type="button" class="snooze-btn" data-snooze="3">+3d</button>
         <button type="button" class="snooze-btn" data-snooze="7">+1w</button>
         <button type="button" class="snooze-btn" data-snooze="14">+2w</button>
-      </div>`:''}
+      </div>
       <label class="edit-label">Time needed</label>
       <div class="edit-pills">${timePills}</div>
       <label class="edit-label">Effort</label>
