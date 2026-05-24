@@ -683,7 +683,7 @@ let editChunks   = [];   // live chunk state while edit sheet is open
 
 // Add-form state (survives re-renders)
 let AF = {
-  title:'',category:'misc',time:'medium',effort:'medium',
+  title:'',category:null,time:'medium',effort:'medium',
   deadline:'',
   recurring:false,recurType:'interval',
   recurEvery:'1',recurUnit:'days',
@@ -2828,7 +2828,7 @@ document.addEventListener('click', e=>{
       addTask({title,category:cat,time:AF.time,effort:AF.effort,
                deadline,
                recurrence,chunks:chunks.length?chunks:null});
-      AF={title:'',category:cat,time:'medium',effort:'medium',
+      AF={title:'',category:null,time:'medium',effort:'medium',
           deadline:'',recurring:false,recurType:'interval',
           recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',
           chunks:[],showChunks:false};
