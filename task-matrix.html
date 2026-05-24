@@ -584,8 +584,9 @@ function _pushToCloud() {
   if (!_db || !_currentUser) return;
   const savedAt = Date.now();
   localStorage.setItem('tm_savedAt', savedAt.toString());
+  const clean = o => JSON.parse(JSON.stringify(o));
   _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-    .set({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt});
+    .set(clean({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt}));
 }
 
 function forcePushToCloud() {
