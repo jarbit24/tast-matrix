@@ -2274,11 +2274,19 @@ function doSaveEdit(id, btn) {
     t.title=title;
     t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
     t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
-    t.category=document.getElementById('et-cat')?.value||t.category;
-    const dateInp=document.getElementById('et-date');
-    if(dateInp!=null){
-      if(t.recurrence) t.nextDue=dateInp.value||t.nextDue;
-      else t.deadline=dateInp.value||null;
+    t.category=document.getElementById('et-cat')?.value||null;
+    const nowRecurring=document.getElementById('et-recur-opts')?.style.display!=='none';
+    const dateVal=document.getElementById('et-date')?.value||null;
+    if(nowRecurring){
+      const every=Math.max(1,parseInt(document.getElementById('et-recur-n')?.value)||1);
+      const unit=document.getElementById('et-recur-unit')?.value||'months';
+      t.recurrence={type:'interval',every,unit};
+      t.nextDue=dateVal||t.nextDue||todayStr();
+      t.deadline=null;
+    } else {
+      t.recurrence=null;
+      t.nextDue=null;
+      t.deadline=dateVal;
     }
     t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
     t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
@@ -2288,10 +2296,9 @@ function doSaveEdit(id, btn) {
       syncEditChunkTitles();
       const saved=editChunks.filter(c=>(c.title||'').trim());
       t.chunks=saved.length?saved.map(c=>({id:c.id||newId(),title:(c.title||'').trim(),completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})):null;
-      const dateInp2=document.getElementById('et-date');
       if(!t.recurrence && t.chunks){
         const stepDates=t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
-        if(stepDates.length && !dateInp2?.value) t.deadline=stepDates[stepDates.length-1];
+        if(stepDates.length && !dateVal) t.deadline=stepDates[stepDates.length-1];
       }
     }
     save();
@@ -2358,7 +2365,25 @@ function openEditSheet(id) {
       <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
       <label class="edit-label">Category</label>
       <select class="edit-field" id="et-cat">${cats}</select>
-      <label class="edit-label">${dateLabel} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+      <div style="margin:10px 0 4px;display:flex;align-items:center;gap:10px">
+        <label class="edit-label" style="margin:0;flex-shrink:0">Recurring</label>
+        <button type="button" id="et-recur-toggle" style="display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;cursor:pointer;font-size:12px;color:var(--text-2)">
+          <span id="et-recur-dot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${t.recurrence?'var(--accent)':'var(--border)'}"></span>
+          <span id="et-recur-lbl">${t.recurrence?'Recurring':'One-time'}</span>
+        </button>
+      </div>
+      <div id="et-recur-opts" style="${t.recurrence?'':'display:none'}margin-bottom:6px">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <span style="font-size:12px;color:var(--text-2);white-space:nowrap">Every</span>
+          <input type="number" id="et-recur-n" class="edit-field" min="1" style="width:64px;margin:0;padding:7px 10px;text-align:center" value="${t.recurrence?.every||1}">
+          <select id="et-recur-unit" class="edit-field" style="margin:0;flex:1">
+            <option value="days"${t.recurrence?.unit==='days'?' selected':''}>days</option>
+            <option value="weeks"${t.recurrence?.unit==='weeks'?' selected':''}>weeks</option>
+            <option value="months"${(!t.recurrence||t.recurrence?.unit==='months')?' selected':''}>months</option>
+          </select>
+        </div>
+      </div>
+      <label class="edit-label" id="et-date-label">${t.recurrence?'Next due':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
       <input class="edit-field" id="et-date" type="date" value="${dateVal}">
       <div class="snooze-row">
         <button type="button" class="snooze-btn" data-snooze="1">+1d</button>
@@ -2400,6 +2425,17 @@ function openEditSheet(id) {
       d.setDate(d.getDate()+parseInt(b.dataset.snooze));
       inp.value=d.toISOString().slice(0,10);
     });
+  });
+  document.getElementById('et-recur-toggle')?.addEventListener('click',()=>{
+    const opts=document.getElementById('et-recur-opts');
+    const dot=document.getElementById('et-recur-dot');
+    const lbl=document.getElementById('et-recur-lbl');
+    const dlLabel=document.getElementById('et-date-label');
+    const on=opts.style.display==='none';
+    opts.style.display=on?'':'none';
+    dot.style.background=on?'var(--accent)':'var(--border)';
+    lbl.textContent=on?'Recurring':'One-time';
+    if(dlLabel) dlLabel.innerHTML=on?'Next due <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span>':'Deadline <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span>';
   });
   el.querySelectorAll('[data-et]').forEach(b=>{
     b.addEventListener('click',()=>{
@@ -2948,11 +2984,17 @@ document.addEventListener('click', e=>{
       t.title=title;
       t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
       t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
-      t.category=document.getElementById('et-cat')?.value||t.category;
-      const dateInp=document.getElementById('et-date');
-      if(dateInp!==null&&dateInp!==undefined){
-        if(t.recurrence) t.nextDue=dateInp.value||t.nextDue;
-        else t.deadline=dateInp.value||null;
+      t.category=document.getElementById('et-cat')?.value||null;
+      const nowRecurring2=document.getElementById('et-recur-opts')?.style.display!=='none';
+      const dateVal2=document.getElementById('et-date')?.value||null;
+      if(nowRecurring2){
+        const every=Math.max(1,parseInt(document.getElementById('et-recur-n')?.value)||1);
+        const unit=document.getElementById('et-recur-unit')?.value||'months';
+        t.recurrence={type:'interval',every,unit};
+        t.nextDue=dateVal2||t.nextDue||todayStr();
+        t.deadline=null;
+      } else {
+        t.recurrence=null; t.nextDue=null; t.deadline=dateVal2;
       }
       t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
       t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
@@ -2964,7 +3006,7 @@ document.addEventListener('click', e=>{
         t.chunks=saved.length?saved.map(c=>({id:c.id||newId(),title:c.title.trim(),completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})):null;
         if(!t.recurrence && t.chunks) {
           const stepDates=t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
-          if(stepDates.length && !dateInp?.value) t.deadline=stepDates[stepDates.length-1];
+          if(stepDates.length && !dateVal2) t.deadline=stepDates[stepDates.length-1];
         }
       }
       save(); closeEditModal(); showToast('Saved ✓'); rv(); break;
