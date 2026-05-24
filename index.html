@@ -4,8 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Task Matrix">
-  <meta name="theme-color" content="#F5F2EC">
+  <meta name="theme-color" content="#1a2d72">
+  <link rel="manifest" href="/tast-matrix/manifest.json">
+  <link rel="apple-touch-icon" href="/tast-matrix/icon-192.png">
   <title>Task Matrix</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3021,6 +3024,11 @@ if(!tasks.find(t=>t.title==='GGVI')) {
 // ── End seed ─────────────────────────────────────────────────
 
 navigate(localStorage.getItem('tm_curView')||'brief');
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/tast-matrix/sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>
