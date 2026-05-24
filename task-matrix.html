@@ -2572,7 +2572,7 @@ function openAddProjectTaskModal(projId, phaseId) {
       <div class="edit-pills">${effortPills}</div>
     </div>
     <div style="padding:8px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid var(--border)">
-      <button type="button" class="modal-done" onclick="doCreateProjectTask('${projId}','${phaseId||''}')">Add Task</button>
+      <button type="button" class="modal-done" onclick="doCreateProjectTask('${projId}','${phaseId||''}',this)">Add Task</button>
       <button type="button" class="edit-cancel" data-a="close-ptask-modal">Cancel</button>
     </div>
   </div>`;
@@ -2587,9 +2587,12 @@ function openAddProjectTaskModal(projId, phaseId) {
   setTimeout(()=>document.getElementById('pt-title')?.focus(),80);
 }
 
-function doCreateProjectTask(projId, phaseId) {
+function doCreateProjectTask(projId, phaseId, btn) {
+  if(btn && btn.disabled) return;
+  if(btn){ btn.disabled=true; btn.textContent='Adding…'; btn.style.background='#4a9e6a'; }
   const title=(document.getElementById('pt-title')?.value||'').trim();
-  if(!title){showToast('Title required');return;}
+  if(!title){showToast('Title required');if(btn){btn.disabled=false;btn.textContent='Add Task';btn.style.background='';}return;}
+  try {
   const category=document.getElementById('pt-cat')?.value||'comp-admin';
   const desc=(document.getElementById('pt-desc')?.value||'').trim()||undefined;
   const link=(document.getElementById('pt-link')?.value||'').trim()||undefined;
@@ -2606,7 +2609,9 @@ function doCreateProjectTask(projId, phaseId) {
     projectId:projId, phaseId:phaseId||undefined,
     description:desc, link,
   });
-  save(); closeProjTaskModal(); rv(); showToast('Task added ✓');
+  save();
+  } catch(e){ console.error('doCreateProjectTask error',e); }
+  closeProjTaskModal(); rv(); showToast('Task added ✓');
 }
 
 // ═══════════════════════════════════════════════════════════
