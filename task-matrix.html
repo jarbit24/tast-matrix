@@ -554,13 +554,6 @@ function initSync() {
           const d = snap.data();
           // Timestamp-based conflict resolution: newer save always wins
           const cloudSavedAt = d.savedAt || 0;
-          const localSavedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
-          if (localSavedAt > cloudSavedAt) {
-            // Local is newer than cloud — don't auto-overwrite. Show conflict warning instead.
-            _syncConflict = true;
-            _updateSyncBar();
-            return;
-          }
           tasks    = d.tasks    || [];
           medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
@@ -641,10 +634,7 @@ function _updateSyncBar() {
   const bar = document.getElementById('sync-bar');
   if (!bar) return;
   if (_currentUser) {
-    if (_syncConflict) {
-      bar.innerHTML = `<span class="sync-conflict">⚠ Local data is newer than cloud</span>`
-        + `<button class="sync-btn sync-push" onclick="forcePushToCloud()" title="Overwrite cloud with your local data">↑ push local</button>`
-        + `<button class="sync-btn sync-pull" onclick="forcePullFromCloud()" title="Replace local data with cloud data">↓ pull cloud</button>`;
+    if (false) {
     } else {
       bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)}</span>`
         + `<button class="sync-btn sync-signout" onclick="forcePullFromCloud()" title="Force pull latest data from cloud">↓ pull</button>`
