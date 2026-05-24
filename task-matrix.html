@@ -674,6 +674,7 @@ let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
 const expandedChunks = new Set(); // task IDs with chunk list expanded in plate view
 let curView  = 'brief';
 let bFilter    = 'all';
+let bProjectFilter = false; // when true, show only tasks that belong to a project
 let bSort      = 'cat'; // 'cat' | 'date' | 'score'
 let bSearch    = '';
 let addTab       = 'task'; // 'task' | 'project'
@@ -2017,7 +2018,9 @@ function viewAdd() {
 
 function viewBacklog() {
   const all=activeTasks();
-  const filtered=bFilter==='all'?all:all.filter(t=>t.category===bFilter);
+  const catFiltered=bFilter==='all'?all:all.filter(t=>t.category===bFilter);
+  const filtered=bProjectFilter?catFiltered.filter(t=>!!t.projectId):catFiltered;
+  const projCount=all.filter(t=>!!t.projectId).length;
 
   // date sort: soonest due first, no-date tasks at the end
   const dueDateOf = t => t.recurrence?t.nextDue:t.deadline;
@@ -2030,6 +2033,7 @@ function viewBacklog() {
   const chips=`<div class="filter-row">
     <button class="fchip ${bFilter==='all'?'on':''}" data-a="fcat" data-cat="all">All (${all.length})</button>
     ${CATS.map(c=>{const n=all.filter(t=>t.category===c.id).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
+    ${projCount?`<button class="fchip ${bProjectFilter?'on':''}" data-a="toggle-proj-filter">📁 Projects (${projCount})</button>`:''}
   </div>`;
   const sortRow=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
     <span style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-right:2px">Sort</span>
@@ -2820,6 +2824,7 @@ document.addEventListener('click', e=>{
     }
 
     case 'fcat': bFilter=btn.dataset.cat; rv(); break;
+    case 'toggle-proj-filter': bProjectFilter=!bProjectFilter; rv(); break;
     case 'set-sort': bSort=btn.dataset.v; rv(); break;
 
     case 'confirm-recur': doCompleteRecur(id, btn.dataset.next); break;
