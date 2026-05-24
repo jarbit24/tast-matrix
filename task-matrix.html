@@ -1342,8 +1342,10 @@ function save() {
   // Cloud sync (no-op if not signed in)
   if (_db && _currentUser) {
     const savedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
+    // Firestore rejects undefined values — strip them via JSON round-trip
+    const clean = o => JSON.parse(JSON.stringify(o));
     _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-      .set({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt}).catch(()=>{});
+      .set(clean({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt})).catch(()=>{});
   }
 }
 
