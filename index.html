@@ -699,12 +699,14 @@ const todayStr  = () => new Date().toLocaleDateString('en-CA');
 const newId     = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc       = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const titleLink = t => {
-  let dispTitle = t.title;
+  let dispHtml;
   if (t.projectId) {
     const proj = projects.find(p=>p.id===t.projectId);
-    if (proj) dispTitle = proj.title + ' — ' + t.title;
+    if (proj) dispHtml = `<em>${esc(proj.title)}</em> · ${esc(t.title)}`;
   }
-  return t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener" class="task-link">${esc(dispTitle)}</a>` : esc(dispTitle);
+  if (!dispHtml) dispHtml = esc(t.title);
+  if (t.link) return `<a href="${esc(t.link)}" target="_blank" rel="noopener" class="task-link">${dispHtml}</a>`;
+  return dispHtml;
 };
 const descLine  = t => t.description ? `<div class="task-desc">${esc(t.description)}</div>` : '';
 const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
