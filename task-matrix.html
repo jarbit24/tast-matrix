@@ -2067,8 +2067,10 @@ function viewBacklog() {
     body+=`</div>`;
   } else {
     // grouped by category, sorted by date within each group
+    // resolve old/aliased category IDs before grouping
+    const resolvecat = t => { const r=t.category||''; return CAT_ALIAS[r]||r||null; };
     CATS.forEach(c=>{
-      const ct=[...filtered.filter(t=>t.category===c.id)].sort(byDate);
+      const ct=[...filtered.filter(t=>resolvecat(t)===c.id)].sort(byDate);
       if(!ct.length) return;
       body+=`<div class="cat-hd"><div class="cat-dot" style="background:${c.color}"></div>
                <div class="cat-hd-name">${c.emoji} ${c.name}</div><div class="cat-hd-ct">${ct.length}</div></div>`;
@@ -2076,6 +2078,15 @@ function viewBacklog() {
       ct.forEach(t=>{body+=taskRow(t);});
       body+=`</div>`;
     });
+    // uncategorized tasks
+    const uncat=[...filtered.filter(t=>{ const r=resolvecat(t); return !r||!CATS.find(c=>c.id===r); })].sort(byDate);
+    if(uncat.length){
+      body+=`<div class="cat-hd"><div class="cat-dot" style="background:var(--border)"></div>
+               <div class="cat-hd-name">Uncategorized</div><div class="cat-hd-ct">${uncat.length}</div></div>`;
+      body+=`<div class="task-grid">`;
+      uncat.forEach(t=>{body+=taskRow(t);});
+      body+=`</div>`;
+    }
   }
   const searchBar=`<div class="b-search-wrap">
     <span class="b-search-ico">🔍</span>
