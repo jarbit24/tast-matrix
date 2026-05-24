@@ -2437,7 +2437,6 @@ function viewProjectDetail(projId) {
     <button class="proj-add-btn" data-a="add-phase" data-pid="${proj.id}">+ Phase</button>
   </div>`;
 
-  if (phases.length === 0 && unphasedTasks.length === 0) {
   phases.forEach(phase => {
     const phaseTasks = projTasks.filter(t => t.phaseId === phase.id);
     h += `<div class="phase-section">
