@@ -2080,7 +2080,10 @@ function taskRow(t) {
   const scoreBadge=sc!==null
     ? `<span class="score-badge ${sc>0?'score-pos':'score-neg'}" title="Suggestion score">${sc}</span>`
     : '';
-  return `<div class="task-card" data-title="${esc(t.title.toLowerCase())}">
+  const _proj=t.projectId?projects.find(p=>p.id===t.projectId):null;
+  const _phase=(_proj&&t.phaseId)?(_proj.phases||[]).find(ph=>ph.id===t.phaseId):null;
+  const _searchStr=([t.title,_proj?.title,_phase?.title].filter(Boolean).join(' ')).toLowerCase();
+  return `<div class="task-card" data-title="${esc(_searchStr)}">
     <button class="task-ck" data-a="complete" data-id="${t.id}"></button>
     <div class="task-body">
       <div class="task-title">${titleLink(t)}</div>
@@ -2559,8 +2562,31 @@ function openAddProjectTaskModal(projId, phaseId) {
       <textarea class="edit-field" id="pt-desc" rows="2" placeholder="Notes…" style="resize:vertical;min-height:50px"></textarea>
       <label class="edit-label">Link <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
       <input class="edit-field" id="pt-link" type="url" placeholder="https://…">
-      <label class="edit-label">Deadline <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
-      <input class="edit-field" id="pt-deadline" type="date">
+      <label class="edit-label">Recurring</label>
+      <button type="button" id="pt-recur-toggle"
+        style="display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);
+               border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text-2);cursor:pointer;margin-bottom:10px;width:100%;text-align:left">
+        <span id="pt-recur-dot" style="width:12px;height:12px;border-radius:50%;background:var(--border);flex-shrink:0"></span>
+        <span id="pt-recur-lbl">One-time task</span>
+      </button>
+      <div id="pt-recur-opts" style="display:none;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:13px;color:var(--text-2);white-space:nowrap">Every</span>
+          <input id="pt-recur-n" type="number" min="1" value="1" class="edit-field"
+                 style="width:64px;margin:0;padding:7px 10px;text-align:center">
+          <select id="pt-recur-unit" class="edit-field" style="margin:0;flex:1">
+            <option value="days">days</option>
+            <option value="weeks">weeks</option>
+            <option value="months" selected>months</option>
+          </select>
+        </div>
+        <label class="edit-label">First due date</label>
+        <input class="edit-field" id="pt-recur-start" type="date">
+      </div>
+      <div id="pt-deadline-row">
+        <label class="edit-label">Deadline <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
+        <input class="edit-field" id="pt-deadline" type="date">
+      </div>
       <label class="edit-label">Time needed</label>
       <div class="edit-pills">${timePills}</div>
       <label class="edit-label">Effort</label>
@@ -2578,6 +2604,15 @@ function openAddProjectTaskModal(projId, phaseId) {
       b.classList.add('sel');
     });
   });
+  // Recurring toggle
+  let ptRecurOn=false;
+  document.getElementById('pt-recur-toggle').addEventListener('click',()=>{
+    ptRecurOn=!ptRecurOn;
+    document.getElementById('pt-recur-dot').style.background=ptRecurOn?'var(--accent)':'var(--border)';
+    document.getElementById('pt-recur-lbl').textContent=ptRecurOn?'Recurring':'One-time task';
+    document.getElementById('pt-recur-opts').style.display=ptRecurOn?'block':'none';
+    document.getElementById('pt-deadline-row').style.display=ptRecurOn?'none':'block';
+  });
   el.addEventListener('click',e=>{if(e.target===el)closeProjTaskModal();});
   setTimeout(()=>document.getElementById('pt-title')?.focus(),80);
 }
@@ -2591,15 +2626,25 @@ function doCreateProjectTask(projId, phaseId, btn) {
   const category=document.getElementById('pt-cat')?.value||'comp-admin';
   const desc=(document.getElementById('pt-desc')?.value||'').trim()||undefined;
   const link=(document.getElementById('pt-link')?.value||'').trim()||undefined;
-  const deadline=document.getElementById('pt-deadline')?.value||null;
   const el=document.getElementById('ptask-modal');
   const time=el?.querySelector('[data-et="pt-time"].sel')?.dataset.v||'medium';
   const effort=el?.querySelector('[data-et="pt-effort"].sel')?.dataset.v||'medium';
   const proj=projects.find(p=>p.id===projId);
   if(!proj){showToast('Project not found');return;}
+  // Recurring vs one-time
+  const isRecurring=document.getElementById('pt-recur-opts')?.style.display!=='none';
+  let recurrence=null, nextDue=null, deadline=null;
+  if(isRecurring){
+    const every=Math.max(1,parseInt(document.getElementById('pt-recur-n')?.value)||1);
+    const unit=document.getElementById('pt-recur-unit')?.value||'months';
+    recurrence={type:'interval',every,unit};
+    nextDue=document.getElementById('pt-recur-start')?.value||todayStr();
+  } else {
+    deadline=document.getElementById('pt-deadline')?.value||null;
+  }
   tasks.push({
     id:newId(), title, category,
-    time, effort, deadline, recurrence:null, nextDue:null,
+    time, effort, deadline, recurrence, nextDue,
     chunks:null, createdAt:new Date().toISOString(), completedAt:null,
     projectId:projId, phaseId:phaseId||undefined,
     description:desc, link,
