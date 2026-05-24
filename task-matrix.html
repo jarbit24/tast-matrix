@@ -708,7 +708,7 @@ const titleLink = t => {
 };
 const descLine  = t => t.description ? `<div class="task-desc">${esc(t.description)}</div>` : '';
 const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
-const getcat    = id => CATS.find(c=>c.id===id)||CATS[CATS.length-1];
+const getcat    = id => { const r=id?(CAT_ALIAS[id]||id):null; return (r&&CATS.find(c=>c.id===r))||{id:'_none',name:'Uncategorized',emoji:'📌',color:'#aaa',textColor:'white'}; };
 const getmed    = id => MEDS.find(m=>m.id===id);
 
 function daysUntil(dl) {
@@ -2018,7 +2018,7 @@ function viewAdd() {
 
 function viewBacklog() {
   const all=activeTasks();
-  const catFiltered=bFilter==='all'?all:all.filter(t=>t.category===bFilter);
+  const catFiltered=bFilter==='all'?all:all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===bFilter;});
   const filtered=bProjectFilter?catFiltered.filter(t=>!!t.projectId):catFiltered;
   const projCount=all.filter(t=>!!t.projectId).length;
 
@@ -2032,7 +2032,7 @@ function viewBacklog() {
 
   const chips=`<div class="filter-row">
     <button class="fchip ${bFilter==='all'?'on':''}" data-a="fcat" data-cat="all">All (${all.length})</button>
-    ${CATS.map(c=>{const n=all.filter(t=>t.category===c.id).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
+    ${CATS.map(c=>{const n=all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===c.id;}).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
     ${projCount?`<button class="fchip ${bProjectFilter?'on':''}" data-a="toggle-proj-filter">📁 Projects (${projCount})</button>`:''}
   </div>`;
   const sortRow=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
