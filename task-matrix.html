@@ -479,18 +479,23 @@
 // ═══════════════════════════════════════════════════════════
 
 const CATS = [
-  {id:'comp-admin',     name:'Computer · Work',     emoji:'💻',color:'#1a2d72'},
-  {id:'comp-creative',  name:'Computer · Personal', emoji:'🖥️',color:'#f5a828'},
-  {id:'house',          name:'Hands-On · Home',     emoji:'🏡',color:'#e83040'},
-  {id:'shopping',       name:'Errands · Shopping',  emoji:'🛒',color:'#38bdb0'},
-  {id:'personal',       name:'Health · Wellness',   emoji:'🩵',color:'#c81870'},
-  {id:'crafts-creative',name:'Creative · Hobbies',  emoji:'🎨',color:'#6aba30'},
+  {id:'comp-admin',   name:'Computer · Work',     emoji:'💻', color:'#1a2d72'},
+  {id:'comp-creative',name:'Computer · Personal', emoji:'🖥️', color:'#f5a828'},
+  {id:'home-health',  name:'Home & Health',        emoji:'🏠', color:'#6aba30'},
+  {id:'hands-on',     name:'Hands-On Projects',    emoji:'🛠️', color:'#c81870'},
+  {id:'out-about',    name:'Out & About',          emoji:'🚗', color:'#e83040'},
+  {id:'creative',     name:'Creative · Hobbies',   emoji:'🎨', color:'#38bdb0'},
 ];
 // Redirect old category IDs to the new 6-category set
-const CAT_ALIAS = {'crafts-work':'house','media':'crafts-creative','misc':'comp-creative'};
+const CAT_ALIAS = {
+  // legacy aliases
+  'crafts-work':'home-health','media':'creative','misc':'comp-creative',
+  // renamed category migrations
+  'house':'home-health','shopping':'out-about','personal':'home-health','crafts-creative':'creative',
+};
 
 // Display order: 2-col grid, grouped by category type
-const SUG_CAT_ORDER = ['comp-admin','comp-creative','house','shopping','crafts-creative','personal'];
+const SUG_CAT_ORDER = ['comp-admin','comp-creative','home-health','hands-on','out-about','creative'];
 
 const MEDS = [
   {id:'esc10',name:'ESC 10',full:'Lexapro',            type:'daily',   skippable:false,color:'#5BAD72'},
