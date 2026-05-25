@@ -694,6 +694,7 @@ let AF = {
   recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
   chunks:[],showChunks:false,
   projectId:'',phaseId:'',
+  description:'',link:'',
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1958,6 +1959,8 @@ function syncAF() {
   if(g('f-cat'))     AF.category=g('f-cat').value||null;
   if(g('f-proj'))    AF.projectId=g('f-proj').value||'';
   if(g('f-phase'))   AF.phaseId=g('f-phase').value||'';
+  if(g('f-desc'))    AF.description=g('f-desc').value||'';
+  if(g('f-link'))    AF.link=g('f-link').value||'';
   document.querySelectorAll('.chunk-inp').forEach(inp=>{
     const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
     if(ch) ch.title=inp.value;
@@ -2129,6 +2132,16 @@ function viewAdd() {
     <div class="form-group">
       <label class="form-label">${AF.recurring?'First due / Start date':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(optional)</span></label>
       <input id="f-deadline" class="form-input" type="date" min="${todayStr()}" value="${AF.deadline}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Notes <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
+      <textarea id="f-desc" class="form-input" rows="2" placeholder="Context, details…" style="resize:vertical;min-height:50px">${esc(AF.description)}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Link <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
+      <input id="f-link" class="form-input" type="url" placeholder="https://…" value="${esc(AF.link)}">
     </div>
 
     <button class="submit-btn" data-a="submit-task">Add to Backlog</button>`;
@@ -3076,15 +3089,19 @@ document.addEventListener('click', e=>{
       const deadline=AF.deadline||(stepDates.length?stepDates[stepDates.length-1]:null);
       const projId=AF.projectId||null;
       const phId=AF.phaseId||null;
+      const desc=(AF.description||'').trim()||undefined;
+      const lnk=(AF.link||'').trim()||undefined;
       addTask({title,category:cat,time:AF.time,effort:AF.effort,
                deadline,
                recurrence,chunks:chunks.length?chunks:null,
                ...(projId?{projectId:projId}:{}),
-               ...(projId&&phId?{phaseId:phId}:{})});
+               ...(projId&&phId?{phaseId:phId}:{}),
+               ...(desc?{description:desc}:{}),
+               ...(lnk?{link:lnk}:{})});
       AF={title:'',category:null,time:'medium',effort:'medium',
           deadline:'',recurring:false,recurType:'interval',
           recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
-          chunks:[],showChunks:false,projectId:'',phaseId:''};
+          chunks:[],showChunks:false,projectId:'',phaseId:'',description:'',link:''};
       setTimeout(()=>navigate('backlog'), 350); break;
     }
 
