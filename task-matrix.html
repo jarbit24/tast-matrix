@@ -1818,14 +1818,15 @@ function viewBrief() {
 
   // On fire — overdue & due today (all of them, no cap)
   if (urgent.length) {
-    h+=`<div class="sec-row" style="margin-top:20px"><div class="sec-hd" style="color:var(--fire)">🔥 Needs attention</div></div>`;
+    h+=`<div class="sec-row" style="margin-top:20px"><div class="sec-hd" style="color:var(--fire)">🔥 Needs attention</div></div>
+        <div class="task-grid" style="align-items:start">`;
     urgent.forEach(t=>{
       const dueDate=t.recurrence?t.nextDue:t.deadline;
       const d=daysUntil(dueDate);
       const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:'today'):'';
       const c=getcat(t.category);
       const onPlate=plate.ids.includes(t.id);
-      h+=`<div class="fire-card">
+      h+=`<div class="fire-card" style="margin-bottom:0">
         <div class="fire-top">
           <div class="fire-title">${titleLink(t)}</div>
           ${dlTxt?`<span class="days-badge" style="background:var(--fire-light);color:var(--fire)">${dlTxt}</span>`:''}
@@ -1840,10 +1841,16 @@ function viewBrief() {
           ${onPlate
             ? `<span style="font-size:11px;color:var(--accent);font-weight:700;align-self:center;padding:7px 4px">on plate</span>`
             : `<button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Plate</button>`}
-          <button class="fire-btn fire-btn-skip" data-a="open-edit" data-id="${t.id}">✎ Edit</button>
+          <button class="fire-btn fire-btn-skip" data-a="open-edit" data-id="${t.id}">✎</button>
+        </div>
+        <div class="snooze-row">
+          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
+          <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
+          ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
         </div>
       </div>`;
     });
+    h+=`</div>`;
   }
 
   // Context picker
