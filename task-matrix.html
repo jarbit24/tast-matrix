@@ -689,6 +689,7 @@ let AF = {
   recurEvery:'1',recurUnit:'days',
   recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
   chunks:[],showChunks:false,
+  projectId:'',phaseId:'',
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1616,8 +1617,7 @@ function getSuggestions() {
   const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
   if(!tOpt||!eOpt) return [];
   const plateSet=new Set(plate.ids);
-  const fireSet=new Set(activeTasks().filter(t=>briefStatus(t)).map(t=>t.id));
-  const cands=activeTasks().filter(t=>!plateSet.has(t.id)&&!fireSet.has(t.id));
+  const cands=activeTasks().filter(t=>!plateSet.has(t.id));
 
   return cands
     .map(t=>({t, score:scoreTask(t)}))
@@ -1880,6 +1880,8 @@ function syncAF() {
   if(g('f-moint'))    AF.recurMonthInterval=g('f-moint').value;
   if(g('f-monthday')) AF.recurMonthDay=g('f-monthday').value;
   if(g('f-cat'))     AF.category=g('f-cat').value||null;
+  if(g('f-proj'))    AF.projectId=g('f-proj').value||'';
+  if(g('f-phase'))   AF.phaseId=g('f-phase').value||'';
   document.querySelectorAll('.chunk-inp').forEach(inp=>{
     const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
     if(ch) ch.title=inp.value;
@@ -2003,6 +2005,24 @@ function viewAdd() {
         ${CATS.map(c=>`<option value="${c.id}" ${AF.category===c.id?'selected':''}>${c.emoji} ${c.name}</option>`).join('')}
       </select>
     </div>
+
+    ${projects.length ? `
+    <div class="form-group">
+      <label class="form-label">Project <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
+      <select id="f-proj" class="form-select" onchange="syncAF();AF.projectId=this.value;AF.phaseId='';rv()">
+        <option value="">— No project —</option>
+        ${projects.map(p=>`<option value="${p.id}" ${AF.projectId===p.id?'selected':''}>${esc(p.title)}</option>`).join('')}
+      </select>
+    </div>
+    ${(()=>{const ap=projects.find(p=>p.id===AF.projectId);const ph=ap?.phases||[];return ph.length?`
+    <div class="form-group">
+      <label class="form-label">Phase <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
+      <select id="f-phase" class="form-select">
+        <option value="">— No phase —</option>
+        ${ph.map(p=>`<option value="${p.id}" ${AF.phaseId===p.id?'selected':''}>${esc(p.title)}</option>`).join('')}
+      </select>
+    </div>`:'';})()}
+    ` : ''}
 
     <div class="form-group">
       <label class="form-label">Time investment</label>
@@ -2966,13 +2986,17 @@ document.addEventListener('click', e=>{
       const chunks=AF.chunks.filter(c=>c.title.trim()).map(c=>({id:c.id,title:c.title.trim(),completedAt:null,dueDate:c.dueDate||undefined}));
       const stepDates=chunks.map(c=>c.dueDate).filter(Boolean).sort();
       const deadline=AF.deadline||(stepDates.length?stepDates[stepDates.length-1]:null);
+      const projId=AF.projectId||null;
+      const phId=AF.phaseId||null;
       addTask({title,category:cat,time:AF.time,effort:AF.effort,
                deadline,
-               recurrence,chunks:chunks.length?chunks:null});
+               recurrence,chunks:chunks.length?chunks:null,
+               ...(projId?{projectId:projId}:{}),
+               ...(projId&&phId?{phaseId:phId}:{})});
       AF={title:'',category:null,time:'medium',effort:'medium',
           deadline:'',recurring:false,recurType:'interval',
           recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
-          chunks:[],showChunks:false};
+          chunks:[],showChunks:false,projectId:'',phaseId:''};
       setTimeout(()=>navigate('backlog'), 350); break;
     }
 
