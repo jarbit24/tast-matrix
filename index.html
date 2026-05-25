@@ -687,7 +687,7 @@ let AF = {
   deadline:'',
   recurring:false,recurType:'interval',
   recurEvery:'1',recurUnit:'days',
-  recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',
+  recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
   chunks:[],showChunks:false,
 };
 
@@ -756,6 +756,15 @@ function calcNextDue(rec, fromStr) {
     else if (rec.unit==='years')  next.setFullYear(next.getFullYear()+n);
     return next.toLocaleDateString('en-CA');
   }
+  if (rec.type === 'monthly-date') {
+    const day=parseInt(rec.day)||1;
+    let yr=from.getFullYear(), mo=from.getMonth();
+    for (let a=0; a<24; a++) {
+      if (a>0) { mo++; if(mo>11){mo=0;yr++;} }
+      const cand=new Date(yr, mo, day, 12, 0, 0);
+      if (cand.getDate()===day && cand.toLocaleDateString('en-CA') > fromStr) return cand.toLocaleDateString('en-CA');
+    }
+  }
   if (rec.type === 'weekday') {
     const wk=parseInt(rec.week), wd=parseInt(rec.weekday), mi=parseInt(rec.monthInterval)||1;
     let yr=from.getFullYear(), mo=from.getMonth();
@@ -774,6 +783,11 @@ function recurLabel(rec) {
     const n=parseInt(rec.every)||1;
     if (n===1) return `↻ daily`.replace('daily', rec.unit==='days'?'daily':rec.unit==='weeks'?'weekly':rec.unit==='months'?'monthly':'yearly');
     return `↻ every ${n} ${rec.unit}`;
+  }
+  if (rec.type==='monthly-date') {
+    const d=parseInt(rec.day)||1;
+    const sfx=d===1?'st':d===2?'nd':d===3?'rd':'th';
+    return `↻ ${d}${sfx} of month`;
   }
   if (rec.type==='weekday') {
     const ord = ORDINALS.find(o=>o.v===String(rec.week));
@@ -1862,7 +1876,8 @@ function syncAF() {
   if(g('f-unit'))    AF.recurUnit=g('f-unit').value;
   if(g('f-week'))    AF.recurWeek=g('f-week').value;
   if(g('f-weekday')) AF.recurWeekday=g('f-weekday').value;
-  if(g('f-moint'))   AF.recurMonthInterval=g('f-moint').value;
+  if(g('f-moint'))    AF.recurMonthInterval=g('f-moint').value;
+  if(g('f-monthday')) AF.recurMonthDay=g('f-monthday').value;
   if(g('f-cat'))     AF.category=g('f-cat').value||null;
   document.querySelectorAll('.chunk-inp').forEach(inp=>{
     const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
@@ -1906,9 +1921,10 @@ function viewAdd() {
 
   const recurSection = AF.recurring ? `
     <div class="recur-box">
-      <div class="tab-pair">
-        <button class="tab-btn ${AF.recurType==='interval'?'sel':''}" data-a="set-recur-type" data-v="interval">Every N …</button>
-        <button class="tab-btn ${AF.recurType==='weekday'?'sel':''}"  data-a="set-recur-type" data-v="weekday">Day of month</button>
+      <div class="tab-pair" style="flex-wrap:wrap;gap:4px">
+        <button class="tab-btn ${AF.recurType==='interval'?'sel':''}" data-a="set-recur-type" data-v="interval">Every N…</button>
+        <button class="tab-btn ${AF.recurType==='monthly-date'?'sel':''}" data-a="set-recur-type" data-v="monthly-date">On the Nth</button>
+        <button class="tab-btn ${AF.recurType==='weekday'?'sel':''}"  data-a="set-recur-type" data-v="weekday">Nth weekday</button>
       </div>
       ${AF.recurType==='interval' ? `
         <div class="inline-row">
@@ -1918,7 +1934,14 @@ function viewAdd() {
             <option value="days"   ${AF.recurUnit==='days'  ?'selected':''}>days</option>
             <option value="weeks"  ${AF.recurUnit==='weeks' ?'selected':''}>weeks</option>
             <option value="months" ${AF.recurUnit==='months'?'selected':''}>months</option>
+            <option value="years"  ${AF.recurUnit==='years' ?'selected':''}>years</option>
           </select>
+        </div>
+      ` : AF.recurType==='monthly-date' ? `
+        <div class="inline-row">
+          <span class="inline-lbl">On the</span>
+          <input id="f-monthday" class="form-input form-input-sm" type="number" min="1" max="31" value="${esc(AF.recurMonthDay||'1')}" style="width:70px">
+          <span class="inline-lbl">of every month</span>
         </div>
       ` : `
         <div>
@@ -2278,9 +2301,21 @@ function doSaveEdit(id, btn) {
     const nowRecurring=document.getElementById('et-recur-opts')?.style.display!=='none';
     const dateVal=document.getElementById('et-date')?.value||null;
     if(nowRecurring){
-      const every=Math.max(1,parseInt(document.getElementById('et-recur-n')?.value)||1);
-      const unit=document.getElementById('et-recur-unit')?.value||'months';
-      t.recurrence={type:'interval',every,unit};
+      const isMonthlyDate=document.getElementById('et-rt-monthly-date')?.classList.contains('sel');
+      const isWeekday=document.getElementById('et-rt-weekday')?.classList.contains('sel');
+      if(isMonthlyDate){
+        const day=Math.max(1,Math.min(31,parseInt(document.getElementById('et-recur-day')?.value)||1));
+        t.recurrence={type:'monthly-date',day};
+      } else if(isWeekday){
+        const week=document.getElementById('et-recur-week')?.value||'1';
+        const weekday=parseInt(document.getElementById('et-recur-weekday-sel')?.value)||1;
+        const monthInterval=Math.max(1,parseInt(document.getElementById('et-recur-moint')?.value)||1);
+        t.recurrence={type:'weekday',week,weekday,monthInterval};
+      } else {
+        const every=Math.max(1,parseInt(document.getElementById('et-recur-n')?.value)||1);
+        const unit=document.getElementById('et-recur-unit')?.value||'months';
+        t.recurrence={type:'interval',every,unit};
+      }
       t.nextDue=dateVal||t.nextDue||todayStr();
       t.deadline=null;
     } else {
@@ -2373,14 +2408,45 @@ function openEditSheet(id) {
         </button>
       </div>
       <div id="et-recur-opts" style="${t.recurrence?'':'display:none'}margin-bottom:6px">
-        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-          <span style="font-size:12px;color:var(--text-2);white-space:nowrap">Every</span>
-          <input type="number" id="et-recur-n" class="edit-field" min="1" style="width:64px;margin:0;padding:7px 10px;text-align:center" value="${t.recurrence?.every||1}">
-          <select id="et-recur-unit" class="edit-field" style="margin:0;flex:1">
-            <option value="days"${t.recurrence?.unit==='days'?' selected':''}>days</option>
-            <option value="weeks"${t.recurrence?.unit==='weeks'?' selected':''}>weeks</option>
-            <option value="months"${(!t.recurrence||t.recurrence?.unit==='months')?' selected':''}>months</option>
-          </select>
+        <div style="display:flex;gap:4px;margin:6px 0 8px;flex-wrap:wrap">
+          <button type="button" id="et-rt-interval" class="tab-btn ${(!t.recurrence||t.recurrence.type==='interval')?'sel':''}" style="flex:1;font-size:11px;padding:5px 6px">Every N…</button>
+          <button type="button" id="et-rt-monthly-date" class="tab-btn ${t.recurrence?.type==='monthly-date'?'sel':''}" style="flex:1;font-size:11px;padding:5px 6px">On the Nth</button>
+          <button type="button" id="et-rt-weekday" class="tab-btn ${t.recurrence?.type==='weekday'?'sel':''}" style="flex:1;font-size:11px;padding:5px 6px">Nth weekday</button>
+        </div>
+        <div id="et-rec-interval" style="${(t.recurrence?.type==='weekday'||t.recurrence?.type==='monthly-date')?'display:none':''}">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:12px;color:var(--text-2);white-space:nowrap">Every</span>
+            <input type="number" id="et-recur-n" class="edit-field" min="1" style="width:64px;margin:0;padding:7px 10px;text-align:center" value="${t.recurrence?.every||1}">
+            <select id="et-recur-unit" class="edit-field" style="margin:0;flex:1">
+              <option value="days"${t.recurrence?.unit==='days'?' selected':''}>days</option>
+              <option value="weeks"${t.recurrence?.unit==='weeks'?' selected':''}>weeks</option>
+              <option value="months"${(!t.recurrence||t.recurrence?.unit==='months')?' selected':''}>months</option>
+              <option value="years"${t.recurrence?.unit==='years'?' selected':''}>years</option>
+            </select>
+          </div>
+        </div>
+        <div id="et-rec-monthly-date" style="${t.recurrence?.type==='monthly-date'?'':'display:none'}">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:12px;color:var(--text-2);white-space:nowrap">On the</span>
+            <input type="number" id="et-recur-day" class="edit-field" min="1" max="31" style="width:64px;margin:0;padding:7px 10px;text-align:center" value="${t.recurrence?.day||1}">
+            <span style="font-size:12px;color:var(--text-2)">of every month</span>
+          </div>
+        </div>
+        <div id="et-rec-weekday" style="${t.recurrence?.type==='weekday'?'':'display:none'}">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:12px;color:var(--text-2);white-space:nowrap">The</span>
+            <select id="et-recur-week" class="edit-field" style="margin:0;flex:1;min-width:90px">
+              ${ORDINALS.map(o=>`<option value="${o.v}"${t.recurrence?.week==o.v?' selected':''}>${o.label}</option>`).join('')}
+            </select>
+            <select id="et-recur-weekday-sel" class="edit-field" style="margin:0;flex:1;min-width:100px">
+              ${WEEKDAYS.map((d,i)=>`<option value="${i}"${t.recurrence?.weekday==i?' selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+            <span style="font-size:12px;color:var(--text-2)">of every</span>
+            <input type="number" id="et-recur-moint" class="edit-field" min="1" style="width:64px;margin:0;padding:7px 10px;text-align:center" value="${t.recurrence?.monthInterval||1}">
+            <span style="font-size:12px;color:var(--text-2)">month(s)</span>
+          </div>
         </div>
       </div>
       <label class="edit-label" id="et-date-label">${t.recurrence?'Next due':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
@@ -2436,6 +2502,16 @@ function openEditSheet(id) {
     dot.style.background=on?'var(--accent)':'var(--border)';
     lbl.textContent=on?'Recurring':'One-time';
     if(dlLabel) dlLabel.innerHTML=on?'Next due <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span>':'Deadline <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span>';
+  });
+  ['et-rt-interval','et-rt-monthly-date','et-rt-weekday'].forEach(tabId=>{
+    document.getElementById(tabId)?.addEventListener('click',()=>{
+      ['et-rt-interval','et-rt-monthly-date','et-rt-weekday'].forEach(id=>{
+        document.getElementById(id)?.classList.toggle('sel',id===tabId);
+      });
+      document.getElementById('et-rec-interval').style.display=tabId==='et-rt-interval'?'':'none';
+      document.getElementById('et-rec-monthly-date').style.display=tabId==='et-rt-monthly-date'?'':'none';
+      document.getElementById('et-rec-weekday').style.display=tabId==='et-rt-weekday'?'':'none';
+    });
   });
   el.querySelectorAll('[data-et]').forEach(b=>{
     b.addEventListener('click',()=>{
@@ -2643,6 +2719,7 @@ function openAddProjectTaskModal(projId, phaseId) {
             <option value="days">days</option>
             <option value="weeks">weeks</option>
             <option value="months" selected>months</option>
+            <option value="years">years</option>
           </select>
         </div>
         <label class="edit-label">First due date</label>
@@ -2858,6 +2935,8 @@ document.addEventListener('click', e=>{
       if(AF.recurring){
         if(AF.recurType==='interval'){
           recurrence={type:'interval',every:parseInt(AF.recurEvery)||1,unit:AF.recurUnit};
+        } else if(AF.recurType==='monthly-date'){
+          recurrence={type:'monthly-date',day:Math.max(1,Math.min(31,parseInt(AF.recurMonthDay)||1))};
         } else {
           recurrence={type:'weekday',week:AF.recurWeek,weekday:AF.recurWeekday,monthInterval:parseInt(AF.recurMonthInterval)||1};
         }
@@ -2870,7 +2949,7 @@ document.addEventListener('click', e=>{
                recurrence,chunks:chunks.length?chunks:null});
       AF={title:'',category:null,time:'medium',effort:'medium',
           deadline:'',recurring:false,recurType:'interval',
-          recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',
+          recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
           chunks:[],showChunks:false};
       setTimeout(()=>navigate('backlog'), 350); break;
     }
@@ -2988,11 +3067,17 @@ document.addEventListener('click', e=>{
       const nowRecurring2=document.getElementById('et-recur-opts')?.style.display!=='none';
       const dateVal2=document.getElementById('et-date')?.value||null;
       if(nowRecurring2){
-        const every=Math.max(1,parseInt(document.getElementById('et-recur-n')?.value)||1);
-        const unit=document.getElementById('et-recur-unit')?.value||'months';
-        t.recurrence={type:'interval',every,unit};
-        t.nextDue=dateVal2||t.nextDue||todayStr();
-        t.deadline=null;
+        const isMD=document.getElementById('et-rt-monthly-date')?.classList.contains('sel');
+        const isWD=document.getElementById('et-rt-weekday')?.classList.contains('sel');
+        if(isMD){
+          const day=Math.max(1,Math.min(31,parseInt(document.getElementById('et-recur-day')?.value)||1));
+          t.recurrence={type:'monthly-date',day};
+        } else if(isWD){
+          t.recurrence={type:'weekday',week:document.getElementById('et-recur-week')?.value||'1',weekday:parseInt(document.getElementById('et-recur-weekday-sel')?.value)||1,monthInterval:Math.max(1,parseInt(document.getElementById('et-recur-moint')?.value)||1)};
+        } else {
+          t.recurrence={type:'interval',every:Math.max(1,parseInt(document.getElementById('et-recur-n')?.value)||1),unit:document.getElementById('et-recur-unit')?.value||'months'};
+        }
+        t.nextDue=dateVal2||t.nextDue||todayStr(); t.deadline=null;
       } else {
         t.recurrence=null; t.nextDue=null; t.deadline=dateVal2;
       }
