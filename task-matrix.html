@@ -2299,6 +2299,9 @@ function doSaveEdit(id, btn) {
     t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
     t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
     t.category=document.getElementById('et-cat')?.value||null;
+    const newProjId=document.getElementById('et-project')?.value||null;
+    if(newProjId){ t.projectId=newProjId; t.phaseId=document.getElementById('et-phase')?.value||undefined; if(!t.phaseId) delete t.phaseId; }
+    else { delete t.projectId; delete t.phaseId; }
     const nowRecurring=document.getElementById('et-recur-opts')?.style.display!=='none';
     const dateVal=document.getElementById('et-date')?.value||null;
     if(nowRecurring){
@@ -2386,6 +2389,10 @@ function openEditSheet(id) {
   const dateVal=t.recurrence?(t.nextDue||''):(t.deadline||'');
   const dateLabel=t.recurrence?'Next due':'Deadline';
   const cats=`<option value=""${!t.category?' selected':''}>— Uncategorized —</option>`+CATS.map(c=>`<option value="${c.id}"${t.category===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
+  const curProj=t.projectId?projects.find(p=>p.id===t.projectId):null;
+  const projOpts=`<option value="">— No project —</option>`+projects.map(p=>`<option value="${p.id}"${t.projectId===p.id?' selected':''}>${esc(p.title)}</option>`).join('');
+  const initPhases=curProj?.phases||[];
+  const phaseOpts=`<option value="">— No phase —</option>`+initPhases.map(ph=>`<option value="${ph.id}"${t.phaseId===ph.id?' selected':''}>${esc(ph.title)}</option>`).join('');
   const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${t.time===v?' sel':''}" data-et="time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
   const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${t.effort===v?' sel':''}" data-et="effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
   const el=document.createElement('div');
@@ -2401,6 +2408,12 @@ function openEditSheet(id) {
       <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
       <label class="edit-label">Category</label>
       <select class="edit-field" id="et-cat">${cats}</select>
+      <label class="edit-label">Project <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+      <select class="edit-field" id="et-project">${projOpts}</select>
+      <div id="et-phase-row" style="${initPhases.length?'':'display:none'}">
+        <label class="edit-label">Phase <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
+        <select class="edit-field" id="et-phase">${phaseOpts}</select>
+      </div>
       <div style="margin:10px 0 4px;display:flex;align-items:center;gap:10px">
         <label class="edit-label" style="margin:0;flex-shrink:0">Recurring</label>
         <button type="button" id="et-recur-toggle" style="display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;cursor:pointer;font-size:12px;color:var(--text-2)">
@@ -2513,6 +2526,14 @@ function openEditSheet(id) {
       document.getElementById('et-rec-monthly-date').style.display=tabId==='et-rt-monthly-date'?'':'none';
       document.getElementById('et-rec-weekday').style.display=tabId==='et-rt-weekday'?'':'none';
     });
+  });
+  document.getElementById('et-project')?.addEventListener('change', e=>{
+    const proj=projects.find(p=>p.id===e.target.value);
+    const phases=proj?.phases||[];
+    const phaseRow=document.getElementById('et-phase-row');
+    const phaseSel=document.getElementById('et-phase');
+    phaseSel.innerHTML=`<option value="">— No phase —</option>`+phases.map(ph=>`<option value="${ph.id}">${esc(ph.title)}</option>`).join('');
+    phaseRow.style.display=phases.length?'':'none';
   });
   el.querySelectorAll('[data-et]').forEach(b=>{
     b.addEventListener('click',()=>{
@@ -3065,6 +3086,9 @@ document.addEventListener('click', e=>{
       t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
       t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
       t.category=document.getElementById('et-cat')?.value||null;
+      const newProjId2=document.getElementById('et-project')?.value||null;
+      if(newProjId2){ t.projectId=newProjId2; t.phaseId=document.getElementById('et-phase')?.value||undefined; if(!t.phaseId) delete t.phaseId; }
+      else { delete t.projectId; delete t.phaseId; }
       const nowRecurring2=document.getElementById('et-recur-opts')?.style.display!=='none';
       const dateVal2=document.getElementById('et-date')?.value||null;
       if(nowRecurring2){
