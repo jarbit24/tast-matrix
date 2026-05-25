@@ -706,7 +706,11 @@ const titleLink = t => {
   let dispHtml;
   if (t.projectId) {
     const proj = projects.find(p=>p.id===t.projectId);
-    if (proj) dispHtml = `<em>${esc(proj.title)}</em> · ${esc(t.title)}`;
+    if (proj) {
+      const phase = t.phaseId ? (proj.phases||[]).find(ph=>ph.id===t.phaseId) : null;
+      const prefix = phase ? `${esc(proj.title)} · ${esc(phase.title)}` : esc(proj.title);
+      dispHtml = `<em>${prefix}</em> · ${esc(t.title)}`;
+    }
   }
   if (!dispHtml) dispHtml = esc(t.title);
   if (t.link) return `<a href="${esc(t.link)}" target="_blank" rel="noopener" class="task-link">${dispHtml}</a>`;
@@ -1634,7 +1638,8 @@ function getSuggestions() {
   const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
   if(!tOpt||!eOpt) return [];
   const plateSet=new Set(plate.ids);
-  const cands=activeTasks().filter(t=>!plateSet.has(t.id));
+  const fireSet=new Set(activeTasks().filter(t=>briefStatus(t)).map(t=>t.id));
+  const cands=activeTasks().filter(t=>!plateSet.has(t.id)&&!fireSet.has(t.id));
 
   return cands
     .map(t=>({t, score:scoreTask(t)}))
@@ -1809,6 +1814,36 @@ function viewBrief() {
       h+=`</div>`;
     });
     h+=`</div>`;
+  }
+
+  // On fire — overdue & due today (all of them, no cap)
+  if (urgent.length) {
+    h+=`<div class="sec-row" style="margin-top:20px"><div class="sec-hd" style="color:var(--fire)">🔥 Needs attention</div></div>`;
+    urgent.forEach(t=>{
+      const dueDate=t.recurrence?t.nextDue:t.deadline;
+      const d=daysUntil(dueDate);
+      const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:'today'):'';
+      const c=getcat(t.category);
+      const onPlate=plate.ids.includes(t.id);
+      h+=`<div class="fire-card">
+        <div class="fire-top">
+          <div class="fire-title">${titleLink(t)}</div>
+          ${dlTxt?`<span class="days-badge" style="background:var(--fire-light);color:var(--fire)">${dlTxt}</span>`:''}
+        </div>
+        <div class="task-meta" style="margin-bottom:6px">
+          <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
+          ${t.recurrence?`<span class="recur-badge">${recurLabel(t.recurrence)}</span>`:''}
+        </div>
+        ${chunkListHtml(t, true)}
+        <div class="fire-btns">
+          <button class="fire-btn fire-btn-done" data-a="complete" data-id="${t.id}">✓ Done</button>
+          ${onPlate
+            ? `<span style="font-size:11px;color:var(--accent);font-weight:700;align-self:center;padding:7px 4px">on plate</span>`
+            : `<button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Plate</button>`}
+          <button class="fire-btn fire-btn-skip" data-a="open-edit" data-id="${t.id}">✎ Edit</button>
+        </div>
+      </div>`;
+    });
   }
 
   // Context picker
@@ -2310,14 +2345,22 @@ function openLogEditSheet(type, id) {
     <div style="font-size:14px;font-weight:500;margin-bottom:14px;color:var(--text-2)">${label}</div>
     ${extraFields}
     <label class="edit-label">Date</label>
-    <input class="edit-field" id="le-date" type="date" value="${dateVal}">
+    <div style="display:flex;align-items:center;gap:6px">
+      <button type="button" onclick="document.getElementById('le-date').showPicker?document.getElementById('le-date').showPicker():document.getElementById('le-date').focus()" style="font-size:18px;background:none;border:none;cursor:pointer;padding:0;line-height:1;flex-shrink:0" title="Pick date">📅</button>
+      <input class="edit-field" id="le-date" type="date" style="flex:1;margin:0">
+    </div>
     <label class="edit-label">Time</label>
-    <input class="edit-field" id="le-time" type="time" value="${timeVal}">
+    <input class="edit-field" id="le-time" type="time">
     <button class="modal-done" data-a="save-log-edit" data-type="${type}" data-id="${id}">Save</button>
     <button class="edit-del" data-a="delete-log-entry" data-type="${type}" data-id="${id}">${delLabel}</button>
     <button class="edit-cancel" data-a="close-log-edit">Cancel</button>
   </div>`;
   document.body.appendChild(el);
+  // Set values programmatically so Chrome/Safari reliably shows the pre-filled time
+  const dateEl=document.getElementById('le-date');
+  const timeEl=document.getElementById('le-time');
+  if(dateEl) dateEl.value=dateVal;
+  if(timeEl) timeEl.value=timeVal;
   el.addEventListener('click',e=>{if(e.target===el)closeLogEditModal();});
 }
 
@@ -2502,7 +2545,10 @@ function openEditSheet(id) {
         </div>
       </div>
       <label class="edit-label" id="et-date-label">${t.recurrence?'Next due':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
-      <input class="edit-field" id="et-date" type="date" value="${dateVal}">
+      <div style="display:flex;align-items:center;gap:6px">
+        <button type="button" onclick="document.getElementById('et-date').showPicker?document.getElementById('et-date').showPicker():document.getElementById('et-date').focus()" style="font-size:18px;background:none;border:none;cursor:pointer;padding:0;line-height:1;flex-shrink:0" title="Pick date">📅</button>
+        <input class="edit-field" id="et-date" type="date" value="${dateVal}" style="flex:1;margin:0">
+      </div>
       <div class="snooze-row">
         <button type="button" class="snooze-btn" data-snooze="1">+1d</button>
         <button type="button" class="snooze-btn" data-snooze="3">+3d</button>
