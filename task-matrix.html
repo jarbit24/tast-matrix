@@ -556,8 +556,10 @@ function initSync() {
           if (snap.metadata.hasPendingWrites) return; // our own write — skip
           if (!snap.exists) { _pushToCloud(); return; } // no cloud data yet — push local up
           const d = snap.data();
-          // Timestamp-based conflict resolution: newer save always wins
+          // Timestamp-based conflict resolution: only accept cloud data if it's newer
           const cloudSavedAt = d.savedAt || 0;
+          const localSavedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
+          if (cloudSavedAt <= localSavedAt) return; // local is same or newer — don't overwrite
           tasks    = d.tasks    || [];
           medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
@@ -702,6 +704,10 @@ let AF = {
 // ═══════════════════════════════════════════════════════════
 
 const todayStr  = () => new Date().toLocaleDateString('en-CA');
+function localISOStr() {
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 const newId     = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc       = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const titleLink = t => {
@@ -1436,7 +1442,7 @@ function toggleMed(medId) {
     medLogs.splice(takenIdx,1); showToast(`${m.name} cleared`);
   } else {
     if(skippedIdx!==-1) medLogs.splice(skippedIdx,1);
-    medLogs.push({id:newId(),medId,takenAt:new Date().toISOString()});
+    medLogs.push({id:newId(),medId,takenAt:localISOStr()});
     showToast(`${m.name} logged ✓`);
   }
   save(); if(curView==='brief') rv();
@@ -1450,7 +1456,7 @@ function skipMed(medId) {
     medLogs.splice(skippedIdx,1); showToast(`${m.name} cleared`);
   } else {
     if(takenIdx!==-1) medLogs.splice(takenIdx,1);
-    medLogs.push({id:newId(),medId,takenAt:new Date().toISOString(),skipped:true});
+    medLogs.push({id:newId(),medId,takenAt:localISOStr(),skipped:true});
     showToast(`${m.name} skipped`);
   }
   save(); if(curView==='brief') rv();
@@ -1470,14 +1476,14 @@ function addTask(d) {
     recurrence: d.recurrence||null,
     nextDue: isRecur ? firstDue : null,
     chunks: d.chunks&&d.chunks.length ? d.chunks : null,
-    createdAt:new Date().toISOString(), completedAt:null,
+    createdAt:localISOStr(), completedAt:null,
   });
   save();
 }
 
 function doCompleteRecur(id, nextDue) {
   const t=tasks.find(x=>x.id===id); if(!t) return;
-  recurLog.push({id:newId(), taskId:id, title:t.title, completedAt:new Date().toISOString()});
+  recurLog.push({id:newId(), taskId:id, title:t.title, completedAt:localISOStr()});
   t.nextDue=nextDue;
   delete t.snoozedFrom;
   if(t.chunks) t.chunks.forEach(c=>c.completedAt=null);
@@ -1543,7 +1549,7 @@ function completeTask(id) {
   if (t.recurrence) {
     openCompleteRecurSheet(id);
   } else {
-    t.completedAt=new Date().toISOString();
+    t.completedAt=localISOStr();
     plate.ids=plate.ids.filter(x=>x!==id);
     save(); showToast('Done ✓'); rv();
   }
@@ -1589,7 +1595,7 @@ function completeChunk(taskId, chunkId) {
     recurLog=recurLog.filter(r=>!(r.isChunk&&r.taskId===taskId&&r.chunkId===chunkId));
     save(); rv(); return;
   }
-  ch.completedAt=new Date().toISOString();
+  ch.completedAt=localISOStr();
   recurLog.push({id:newId(), taskId, chunkId, title:ch.title, parentTitle:t.title, completedAt:ch.completedAt, cat:t.category, isChunk:true});
   if(t.chunks.every(c=>c.completedAt)) { save(); setTimeout(()=>completeTask(taskId),300); }
   else { save(); rv(); }
@@ -1979,7 +1985,7 @@ function doCreateProjectFromAdd() {
   const title=(document.getElementById('ap-title')?.value||'').trim();
   if(!title){showToast('Name required');return;}
   const color=PROJ_PALETTE[projects.length % PROJ_PALETTE.length];
-  projects.push({id:newId(),title,color,createdAt:new Date().toISOString(),phases:[]});
+  projects.push({id:newId(),title,color,createdAt:localISOStr(),phases:[]});
   save(); showToast('Project created ✓'); navigate('projects');
 }
 
@@ -2794,7 +2800,7 @@ function doCreateProject() {
   const title=(document.getElementById('np-title')?.value||'').trim();
   if(!title){showToast('Name required');return;}
   const color=PROJ_PALETTE[projects.length % PROJ_PALETTE.length];
-  projects.push({id:newId(),title,color,createdAt:new Date().toISOString(),phases:[]});
+  projects.push({id:newId(),title,color,createdAt:localISOStr(),phases:[]});
   save(); closeProjectModal(); rv(); showToast('Project created ✓');
 }
 
@@ -2930,7 +2936,7 @@ function doCreateProjectTask(projId, phaseId, btn) {
   tasks.push({
     id:newId(), title, category,
     time, effort, deadline, recurrence, nextDue,
-    chunks:null, createdAt:new Date().toISOString(), completedAt:null,
+    chunks:null, createdAt:localISOStr(), completedAt:null,
     projectId:projId, phaseId:phaseId||undefined,
     description:desc, link,
   });
