@@ -74,25 +74,6 @@
     .card { background:var(--surface); border-radius:var(--r); padding:14px;
             box-shadow:var(--shadow); margin-bottom:12px; }
 
-    /* Meds */
-    .meds-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-    .med-group{ display:flex; flex-direction:column; align-items:center; gap:3px; }
-    .med-btn  { display:flex; flex-direction:column; align-items:center; gap:2px;
-                padding:9px 12px; border:2px solid var(--border); border-radius:12px;
-                background:var(--surface); cursor:pointer; transition:all .15s; min-width:60px;
-                -webkit-tap-highlight-color:transparent; }
-    .med-btn.taken   { background:var(--accent-light); }
-    .med-btn.skipped { background:var(--surface-2); opacity:.55; }
-    .med-ck   { font-size:15px; line-height:1; }
-    .med-name { font-size:12px; font-weight:700; letter-spacing:.04em; }
-    .med-time { font-size:10px; color:var(--text-2); }
-    .med-skip { font-size:10px; color:var(--text-3); background:none; border:none;
-                cursor:pointer; padding:2px 8px; border-radius:4px; white-space:nowrap;
-                -webkit-tap-highlight-color:transparent; }
-    .med-skip.active { color:#c0392b; font-weight:700; }
-    .meds-hd  { display:flex; justify-content:space-between; align-items:center; }
-    .meds-hd-label { font-size:13px; font-weight:700; }
-
     /* Fire / urgent cards */
     .fire-card  { background:var(--fire-light); border:1px solid #F0C0BA;
                   border-radius:var(--r); padding:14px; margin-bottom:8px; }
@@ -504,15 +485,6 @@ const CAT_ALIAS = {
 // Display order: 2-col grid, grouped by category type
 const SUG_CAT_ORDER = ['comp-admin','comp-creative','home-health','hands-on','out-about','creative'];
 
-const MEDS = [
-  {id:'esc10',name:'ESC 10',full:'Lexapro',            type:'daily',   skippable:false,color:'#5BAD72'},
-  {id:'bloom',name:'BLOOM', full:'Zyrtec / Cetirizine',type:'seasonal',skippable:true, color:'#C9A227'},
-  {id:'evp',  name:'EVP',   full:'Evvy Probiotic',      type:'daily',   skippable:true, color:'#9B7FD4'},
-  {id:'d2000',name:'D 2000',full:'Vitamin D',           type:'daily',   skippable:false,color:'#E8914D'},
-  {id:'fsh',  name:'FSH',   full:'Fish Oil',            type:'daily',   skippable:true, color:'#4A87C8'},
-  {id:'ws9',  name:'WS 9', full:'WS 9',               type:'daily',   skippable:false,color:'#E87DB3'},
-];
-
 const TIME_OPTS   = [{v:'short',label:'< 1 hr',levels:['low']},{v:'medium',label:'1–3 hrs',levels:['low','medium']},{v:'full',label:'Free day',levels:['low','medium','high']}];
 const ENERGY_OPTS = [{v:'low',label:'Low',levels:['low']},{v:'medium',label:'Medium',levels:['low','medium']},{v:'high',label:'High',levels:['low','medium','high']}];
 const TIME_LBL    = {low:'0–30 min',medium:'30m–2hr',high:'2+ hrs'};
@@ -561,9 +533,8 @@ function initSync() {
           const localSavedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
           if (cloudSavedAt <= localSavedAt) return; // local is same or newer — don't overwrite
           tasks    = d.tasks    || [];
-          medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
-          settings = d.settings || {seasonalMeds:{bloom:false}};
+          settings = d.settings || {};
           projects = d.projects || [];
           const today = todayStr();
           if (d.plate && d.plate.date === today) plate = d.plate;
@@ -571,7 +542,6 @@ function initSync() {
           // Mirror to localStorage (including cloud's savedAt so we don't re-push)
           try {
             localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-            localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
             localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
             localStorage.setItem('tm_settings', JSON.stringify(settings));
             localStorage.setItem('tm_plate',    JSON.stringify(plate));
@@ -593,7 +563,7 @@ function _pushToCloud() {
   localStorage.setItem('tm_savedAt', savedAt.toString());
   const clean = o => JSON.parse(JSON.stringify(o));
   _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-    .set(clean({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt}));
+    .set(clean({tasks, recurLog, settings, plate, ctx, projects, savedAt}));
 }
 
 function forcePushToCloud() {
@@ -611,16 +581,14 @@ function forcePullFromCloud() {
       if (!snap.exists) { showToast('No cloud data found'); return; }
       const d = snap.data();
       tasks    = d.tasks    || [];
-      medLogs  = d.medLogs  || [];
       recurLog = d.recurLog || [];
-      settings = d.settings || {seasonalMeds:{bloom:false}};
+      settings = d.settings || {};
       projects = d.projects || [];
       const today = todayStr();
       if (d.plate && d.plate.date === today) plate = d.plate;
       if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
       try {
         localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-        localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
         localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
         localStorage.setItem('tm_settings', JSON.stringify(settings));
         localStorage.setItem('tm_plate',    JSON.stringify(plate));
@@ -671,9 +639,8 @@ function signOutGoogle() {
 // ═══════════════════════════════════════════════════════════
 
 let tasks    = [];   // {id,title,category,time,effort,deadline,leadTime,recurrence,nextDue,chunks,createdAt,completedAt,projectId?,phaseId?}
-let medLogs  = [];   // {id,medId,takenAt}
 let recurLog = [];   // {id,taskId,title,completedAt} — history of recurring task completions
-let settings = {seasonalMeds:{bloom:false}};
+let settings = {};
 let plate    = {date:'',ids:[]};
 let ctx      = {date:'',time:null,energy:null};
 let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
@@ -741,7 +708,6 @@ function chunkHints(t) {
 }
 const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
 const getcat    = id => { const r=id?(CAT_ALIAS[id]||id):null; return (r&&CATS.find(c=>c.id===r))||{id:'_none',name:'Uncategorized',emoji:'📌',color:'#aaa',textColor:'white'}; };
-const getmed    = id => MEDS.find(m=>m.id===id);
 
 function daysUntil(dl) {
   if (!dl) return null;
@@ -1128,125 +1094,6 @@ function seedTasks() {
   });
 }
 
-// ═══════════════════════════════════════════════════════════
-//  SEED LOG  (one-time history import from Sheet7.csv)
-// ═══════════════════════════════════════════════════════════
-
-// Format: ["YYYY-MM-DDTHH:MM:SS","medId"]  — one per med per day (deduplicated), local time
-const SEED_MEDLOG = [
-["2026-05-18T08:05:00","fsh"],["2026-05-18T08:05:47","evp"],["2026-05-18T08:05:42","esc10"],["2026-05-18T08:05:36","d2000"],["2026-05-18T06:43:37","ws9"],
-["2026-05-17T09:05:53","fsh"],["2026-05-17T09:05:47","evp"],["2026-05-17T09:05:42","esc10"],["2026-05-17T09:05:36","d2000"],["2026-05-17T08:43:37","ws9"],
-["2026-05-16T10:36:07","fsh"],["2026-05-16T10:36:01","evp"],["2026-05-16T10:36:28","esc10"],["2026-05-16T10:36:20","d2000"],["2026-05-16T08:53:37","ws9"],
-["2026-05-15T11:51:53","fsh"],["2026-05-15T11:53:50","esc10"],["2026-05-15T11:53:45","d2000"],["2026-05-15T11:53:37","ws9"],
-["2026-05-14T08:51:47","evp"],["2026-05-14T08:51:42","esc10"],["2026-05-14T08:51:36","d2000"],["2026-05-14T07:55:10","ws9"],
-["2026-05-13T08:05:58","fsh"],["2026-05-13T08:05:51","evp"],["2026-05-13T08:05:43","esc10"],["2026-05-13T08:05:35","d2000"],["2026-05-13T07:20:31","ws9"],
-["2026-05-12T09:15:36","fsh"],["2026-05-12T09:15:31","evp"],["2026-05-12T09:15:23","esc10"],["2026-05-12T09:14:59","d2000"],["2026-05-12T09:14:51","ws9"],
-["2026-05-11T10:15:36","fsh"],["2026-05-11T10:15:36","evp"],["2026-05-11T10:15:36","esc10"],["2026-05-11T10:15:36","d2000"],["2026-05-11T09:15:36","ws9"],
-["2026-05-10T09:19:58","fsh"],["2026-05-10T09:19:54","evp"],["2026-05-10T09:19:49","esc10"],["2026-05-10T09:19:45","d2000"],["2026-05-10T08:59:40","ws9"],
-["2026-05-09T09:15:36","fsh"],["2026-05-09T09:15:36","evp"],["2026-05-09T09:15:36","esc10"],["2026-05-09T09:15:36","d2000"],["2026-05-09T08:35:36","ws9"],
-["2026-05-07T09:45:32","fsh"],["2026-05-07T09:45:25","evp"],["2026-05-07T09:45:15","esc10"],["2026-05-07T09:45:09","d2000"],["2026-05-07T08:45:36","ws9"],
-["2026-05-06T11:06:11","fsh"],["2026-05-06T11:05:51","evp"],["2026-05-06T11:05:58","esc10"],["2026-05-06T11:06:06","d2000"],["2026-05-06T10:07:03","ws9"],
-["2026-05-05T09:43:21","fsh"],["2026-05-05T09:42:56","evp"],["2026-05-05T09:43:02","esc10"],["2026-05-05T09:43:09","d2000"],["2026-05-05T08:39:13","ws9"],
-["2026-05-04T09:23:29","fsh"],["2026-05-04T09:23:07","evp"],["2026-05-04T09:23:13","esc10"],["2026-05-04T09:23:19","d2000"],["2026-05-04T07:41:16","ws9"],
-["2026-05-03T10:49:16","fsh"],["2026-05-03T10:49:01","evp"],["2026-05-03T10:49:06","esc10"],["2026-05-03T10:49:11","d2000"],["2026-05-03T09:32:06","ws9"],
-["2026-05-02T10:38:31","fsh"],["2026-05-02T10:38:15","evp"],["2026-05-02T10:38:20","esc10"],["2026-05-02T10:38:25","d2000"],["2026-05-02T08:38:09","ws9"],
-["2026-05-01T13:39:25","fsh"],["2026-05-01T13:39:10","evp"],["2026-05-01T13:39:16","esc10"],["2026-05-01T13:39:20","d2000"],["2026-05-01T08:19:05","ws9"],
-["2026-04-30T09:26:18","fsh"],["2026-04-30T09:25:58","evp"],["2026-04-30T09:26:04","esc10"],["2026-04-30T09:26:09","d2000"],["2026-04-30T08:31:06","ws9"],
-["2026-04-29T09:34:36","fsh"],["2026-04-29T09:34:13","evp"],["2026-04-29T09:34:22","esc10"],["2026-04-29T09:34:30","d2000"],["2026-04-29T08:34:08","ws9"],
-["2026-04-28T09:25:59","evp"],["2026-04-28T09:26:09","esc10"],["2026-04-28T09:26:27","d2000"],["2026-04-28T08:22:41","ws9"],
-["2026-04-27T09:53:38","evp"],["2026-04-27T09:53:32","esc10"],["2026-04-27T08:53:53","d2000"],["2026-04-27T08:13:32","ws9"],
-["2026-04-26T08:53:53","d2000"],["2026-04-26T08:13:32","ws9"],
-["2026-04-25T09:53:38","evp"],["2026-04-25T09:53:32","esc10"],["2026-04-25T08:53:53","d2000"],["2026-04-25T08:13:32","ws9"],
-["2026-04-24T09:53:32","esc10"],["2026-04-24T08:53:53","d2000"],["2026-04-24T08:13:32","ws9"],
-["2026-04-23T09:53:32","esc10"],["2026-04-23T08:13:32","ws9"],
-["2026-04-22T08:53:32","esc10"],["2026-04-22T08:13:32","ws9"],
-["2026-04-21T08:42:58","d2000"],
-["2026-04-20T09:50:02","fsh"],["2026-04-20T09:49:47","evp"],["2026-04-20T09:49:54","esc10"],["2026-04-20T09:50:07","d2000"],["2026-04-20T08:53:16","ws9"],
-["2026-04-19T18:19:42","esc10"],["2026-04-19T09:39:31","ws9"],
-["2026-04-18T13:00:21","esc10"],["2026-04-18T13:00:31","d2000"],
-["2026-04-17T13:00:16","evp"],["2026-04-17T13:00:21","esc10"],["2026-04-17T13:00:31","d2000"],["2026-04-17T07:25:12","ws9"],
-["2026-04-16T13:00:16","evp"],["2026-04-16T13:00:21","esc10"],["2026-04-16T13:00:31","d2000"],["2026-04-16T07:30:12","ws9"],
-["2026-04-15T19:57:35","esc10"],["2026-04-15T12:57:22","ws9"],
-["2026-04-14T10:12:46","ws9"],
-["2026-04-13T11:06:33","esc10"],["2026-04-13T11:06:35","d2000"],["2026-04-13T10:06:22","ws9"],
-["2026-04-11T08:18:58","esc10"],["2026-04-11T08:18:52","evp"],
-["2026-04-10T05:53:21","ws9"],
-["2026-04-09T08:18:58","esc10"],["2026-04-09T08:18:52","evp"],["2026-04-09T07:53:21","ws9"],
-["2026-04-08T08:19:02","d2000"],["2026-04-08T08:18:52","evp"],
-["2026-04-07T08:18:58","esc10"],["2026-04-07T08:18:52","evp"],
-["2026-04-06T08:28:59","ws9"],
-["2026-04-05T13:29:02","esc10"],["2026-04-05T09:28:59","ws9"],
-["2026-04-04T11:28:59","fsh"],["2026-04-04T10:05:59","d2000"],
-["2026-04-03T09:52:38","fsh"],["2026-04-03T09:52:47","evp"],["2026-04-03T09:52:51","esc10"],["2026-04-03T09:52:57","d2000"],
-["2026-04-02T08:46:27","esc10"],
-["2026-04-01T14:59:22","esc10"],["2026-04-01T14:59:26","d2000"],
-["2026-03-29T09:12:42","fsh"],["2026-03-29T09:12:55","evp"],["2026-03-29T09:13:05","esc10"],["2026-03-29T08:13:17","ws9"],
-["2026-03-28T08:17:27","ws9"],
-["2026-03-27T09:21:40","fsh"],["2026-03-27T09:21:45","evp"],["2026-03-27T09:21:49","esc10"],["2026-03-27T09:21:57","d2000"],["2026-03-27T07:22:04","ws9"],
-["2026-03-25T10:22:49","evp"],["2026-03-25T10:22:56","d2000"],["2026-03-25T09:22:41","ws9"],
-["2026-03-24T11:37:24","fsh"],["2026-03-24T11:37:30","evp"],["2026-03-24T11:37:38","esc10"],["2026-03-24T11:37:42","d2000"],
-["2026-03-23T12:37:57","fsh"],["2026-03-23T12:38:02","evp"],
-["2026-03-22T11:17:15","evp"],["2026-03-22T11:17:20","esc10"],["2026-03-22T11:17:25","d2000"],["2026-03-22T08:17:06","ws9"],
-["2026-03-21T10:15:23","fsh"],["2026-03-21T10:15:30","esc10"],["2026-03-21T10:15:33","d2000"],["2026-03-21T08:47:18","ws9"],
-["2026-03-20T11:53:59","esc10"],["2026-03-20T11:54:04","d2000"],
-["2026-03-17T08:58:23","esc10"],["2026-03-17T08:58:39","evp"],["2026-03-17T08:58:47","d2000"],["2026-03-17T08:07:26","ws9"],
-["2026-03-16T11:56:12","fsh"],["2026-03-16T11:55:53","evp"],["2026-03-16T11:55:45","esc10"],["2026-03-16T11:56:05","d2000"],
-["2026-03-14T09:48:18","esc10"],["2026-03-14T09:48:24","d2000"],
-["2026-03-13T12:37:35","evp"],
-["2026-03-08T13:34:14","esc10"],["2026-03-08T13:34:19","d2000"],
-["2026-03-07T19:38:44","esc10"],["2026-03-07T19:38:44","d2000"],
-["2026-03-06T19:38:44","d2000"],
-["2026-03-05T19:38:44","esc10"],["2026-03-05T19:38:44","d2000"],
-["2026-03-04T19:38:44","esc10"],
-["2026-03-03T19:38:44","esc10"],
-["2026-03-02T19:38:44","d2000"],
-["2026-03-01T19:38:44","d2000"],
-["2026-02-28T10:38:48","d2000"],
-["2026-02-27T12:27:49","esc10"],
-["2026-02-26T10:04:27","esc10"],
-["2026-02-24T09:33:28","esc10"],["2026-02-24T09:33:24","d2000"],
-["2026-02-23T10:22:15","d2000"],
-["2026-02-22T11:00:25","esc10"],["2026-02-22T11:00:02","d2000"],
-["2026-02-21T09:13:47","esc10"],["2026-02-21T09:13:43","d2000"],
-["2026-02-20T08:53:53","esc10"],["2026-02-20T08:53:46","d2000"],
-["2026-02-19T09:34:36","esc10"],["2026-02-19T09:34:32","d2000"],
-["2026-02-18T09:59:22","esc10"],["2026-02-18T09:59:16","d2000"],
-["2026-02-17T10:22:13","esc10"],["2026-02-17T10:22:10","d2000"],
-["2026-02-16T09:10:13","esc10"],["2026-02-16T09:10:09","d2000"],
-["2026-02-15T10:06:52","esc10"],["2026-02-15T10:06:52","d2000"],
-["2026-02-14T10:06:52","esc10"],["2026-02-14T10:06:49","d2000"],
-["2026-02-13T09:05:33","d2000"],
-["2026-02-12T09:13:52","esc10"],["2026-02-12T09:13:47","d2000"],
-["2026-02-11T08:06:36","esc10"],["2026-02-11T08:06:30","d2000"],
-["2026-02-10T09:19:10","esc10"],["2026-02-10T09:19:06","d2000"],
-["2026-02-09T17:46:43","esc10"],["2026-02-09T17:46:38","d2000"],
-["2026-02-08T11:07:32","esc10"],["2026-02-08T11:07:16","d2000"],
-["2026-02-07T09:18:32","esc10"],["2026-02-07T09:18:26","d2000"],
-["2026-02-06T12:15:54","esc10"],["2026-02-06T12:15:49","d2000"],
-["2026-02-05T09:05:04","esc10"],["2026-02-05T09:04:57","d2000"],
-["2026-02-04T11:57:44","esc10"],["2026-02-04T11:57:37","d2000"],
-["2026-02-03T08:28:10","esc10"],["2026-02-03T08:28:03","d2000"],
-["2026-02-02T11:17:57","esc10"],["2026-02-02T11:17:50","d2000"],
-["2026-02-01T18:02:02","esc10"],["2026-02-01T18:01:58","d2000"],
-["2026-01-31T09:59:11","esc10"],["2026-01-31T09:59:06","d2000"],
-["2026-01-30T14:53:53","d2000"],["2026-01-30T14:53:53","esc10"],
-["2026-01-29T18:51:54","esc10"],
-["2026-01-28T09:22:44","esc10"],["2026-01-28T09:22:38","d2000"],
-["2026-01-27T09:08:53","esc10"],["2026-01-27T09:08:46","d2000"],
-["2026-01-26T08:43:15","esc10"],["2026-01-26T08:43:06","d2000"],
-["2026-01-25T15:25:17","esc10"],["2026-01-25T15:25:13","d2000"],
-["2026-01-24T10:46:24","esc10"],
-["2026-01-23T10:21:12","esc10"],["2026-01-23T11:01:03","d2000"],
-["2026-01-22T12:13:09","esc10"],
-["2026-01-21T10:57:25","esc10"],["2026-01-21T10:57:30","d2000"],
-["2026-01-20T15:10:06","esc10"],["2026-01-20T15:09:58","d2000"],
-["2026-01-19T07:37:56","esc10"],
-["2026-01-18T10:19:46","esc10"],
-["2026-01-17T10:32:01","esc10"],["2026-01-17T10:32:14","d2000"],
-["2026-01-16T09:05:54","esc10"],
-["2026-01-15T12:08:55","esc10"],["2026-01-15T12:09:01","d2000"],
-["2026-01-14T12:48:06","esc10"],["2026-01-14T12:48:10","d2000"],
-];
 
 // Format: ["YYYY-MM-DDTHH:MM:SS","title","C"]  C=P(personal)|A(comp-admin)|B(crafts-work)|M(misc)
 // Includes both recurring and one-off completions; no "Complete -" summaries; no URLs.
@@ -1360,15 +1207,6 @@ const SEED_RLOG = [
 // cat code → category id
 const RLOG_CAT = {P:'personal',A:'comp-admin',B:'crafts-work',M:'misc'};
 
-function seedLog() {
-  SEED_MEDLOG.forEach(([ts, medId]) => {
-    medLogs.push({id:newId(), medId, takenAt: ts});
-  });
-  SEED_RLOG.forEach(([ts, title, catCode]) => {
-    recurLog.push({id:newId(), taskId:null, title, completedAt: ts, cat: RLOG_CAT[catCode]||'misc'});
-  });
-}
-
 // ═══════════════════════════════════════════════════════════
 //  STORAGE
 // ═══════════════════════════════════════════════════════════
@@ -1377,7 +1215,6 @@ function save() {
   try {
     const savedAt = Date.now();
     localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-    localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
     localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
     localStorage.setItem('tm_settings', JSON.stringify(settings));
     localStorage.setItem('tm_plate',    JSON.stringify(plate));
@@ -1391,16 +1228,15 @@ function save() {
     // Firestore rejects undefined values — strip them via JSON round-trip
     const clean = o => JSON.parse(JSON.stringify(o));
     _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-      .set(clean({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt})).catch(()=>{});
+      .set(clean({tasks, recurLog, settings, plate, ctx, projects, savedAt})).catch(()=>{});
   }
 }
 
 function load() {
   try {
     tasks    = JSON.parse(localStorage.getItem('tm_tasks')   ||'[]');
-    medLogs  = JSON.parse(localStorage.getItem('tm_mlogs')  ||'[]');
     recurLog = JSON.parse(localStorage.getItem('tm_rlog')   ||'[]');
-    settings = JSON.parse(localStorage.getItem('tm_settings')||'{"seasonalMeds":{"bloom":false}}');
+    settings = JSON.parse(localStorage.getItem('tm_settings')||'{}');
     plate    = JSON.parse(localStorage.getItem('tm_plate')  ||'{"date":"","ids":[]}');
     ctx      = JSON.parse(localStorage.getItem('tm_ctx')    ||'{"date":"","time":null,"energy":null}');
     projects = JSON.parse(localStorage.getItem('tm_projects')||'[]');
@@ -1412,54 +1248,10 @@ function load() {
       localStorage.setItem('tm_seeded','1');
       save();
     }
-    if (!localStorage.getItem('tm_log_seeded_v2')) {
-      medLogs=[]; recurLog=[];
-      seedLog();
-      localStorage.setItem('tm_log_seeded_v2','1');
-      save();
-    }
   } catch(e) {
-    tasks=[];medLogs=[];recurLog=[];settings={seasonalMeds:{bloom:false}};
+    tasks=[];recurLog=[];settings={};
     plate={date:todayStr(),ids:[]};ctx={date:todayStr(),time:null,energy:null};
   }
-}
-
-// ═══════════════════════════════════════════════════════════
-//  MEDS
-// ═══════════════════════════════════════════════════════════
-
-const medActive     = id => { const m=getmed(id); return m&&(m.type!=='seasonal'||!!(settings.seasonalMeds||{})[id]); };
-const medTakenToday   = id => medLogs.some(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&!l.skipped);
-const medSkippedToday = id => medLogs.some(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&l.skipped);
-const medLastTime     = id => { const ls=medLogs.filter(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&!l.skipped); return ls.length?ls[ls.length-1].takenAt:null; };
-
-function toggleMed(medId) {
-  const m=getmed(medId); if(!m) return;
-  if(!medActive(medId)&&m.type==='seasonal'){showToast(`${m.name} is seasonal — enable in ⚙ settings`);return;}
-  const takenIdx  =medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&!l.skipped);
-  const skippedIdx=medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&l.skipped);
-  if(takenIdx!==-1){
-    medLogs.splice(takenIdx,1); showToast(`${m.name} cleared`);
-  } else {
-    if(skippedIdx!==-1) medLogs.splice(skippedIdx,1);
-    medLogs.push({id:newId(),medId,takenAt:localISOStr()});
-    showToast(`${m.name} logged ✓`);
-  }
-  save(); if(curView==='brief') rv();
-}
-
-function skipMed(medId) {
-  const m=getmed(medId); if(!m) return;
-  const takenIdx  =medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&!l.skipped);
-  const skippedIdx=medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&l.skipped);
-  if(skippedIdx!==-1){
-    medLogs.splice(skippedIdx,1); showToast(`${m.name} cleared`);
-  } else {
-    if(takenIdx!==-1) medLogs.splice(takenIdx,1);
-    medLogs.push({id:newId(),medId,takenAt:localISOStr(),skipped:true});
-    showToast(`${m.name} skipped`);
-  }
-  save(); if(curView==='brief') rv();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1751,30 +1543,6 @@ function chunkListHtml(t, inPlate=false) {
   return `<div class="chunk-list">${rowsHtml}${toggleBtn}</div>`;
 }
 
-function medsSection() {
-  const btns=MEDS.map(m=>{
-    if(m.type==='seasonal'&&!medActive(m.id)) return '';
-    const taken=medTakenToday(m.id), skipped=medSkippedToday(m.id), lt=medLastTime(m.id);
-    const state=taken?'taken':skipped?'skipped':'';
-    return `<div class="med-group">
-      <button class="med-btn ${state}" data-a="log-med" data-med="${m.id}"
-              style="${taken?`border-color:${m.color};`:''}">
-        <span class="med-ck">${taken?'✓':'·'}</span>
-        <span class="med-name" style="color:${taken?m.color:'var(--text)'}">${m.name}</span>
-        <span class="med-time">${lt&&!skipped?fmtTime(lt):'—'}</span>
-      </button>
-      <button class="med-skip ${skipped?'active':''}" data-a="skip-med" data-med="${m.id}">
-        ${skipped?'skipped ✕':'skip'}
-      </button>
-    </div>`;
-  }).join('');
-  return `<div class="card">
-    <div class="meds-hd"><span class="meds-hd-label">Daily Log</span>
-      <button class="link-btn" data-a="med-settings">⚙ settings</button></div>
-    <div class="meds-row">${btns}</div>
-  </div>`;
-}
-
 // ═══════════════════════════════════════════════════════════
 //  VIEW: TODAY
 // ═══════════════════════════════════════════════════════════
@@ -1787,8 +1555,7 @@ function viewBrief() {
   const ctxSet  = ctx.time && ctx.energy;
 
   let h=`<div class="greeting">${greet()}, Jules</div>
-          <div class="date-str">${fmtDateFull(todayStr())}</div>
-          ${medsSection()}`;
+          <div class="date-str">${fmtDateFull(todayStr())}</div>`;
 
 
 
@@ -2273,15 +2040,13 @@ function taskRow(t) {
 function viewLog() {
   const done=[...tasks.filter(t=>t.completedAt)].sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
   const rlog=[...recurLog].sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
-  const mlogs=[...medLogs].sort((a,b)=>new Date(b.takenAt)-new Date(a.takenAt));
   const byDate={};
   done.forEach(t=>{const d=t.completedAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'task',ts:t.completedAt,data:t});});
   rlog.forEach(l=>{const d=l.completedAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'recur',ts:l.completedAt,data:l});});
-  mlogs.forEach(l=>{const d=l.takenAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'med',ts:l.takenAt,data:l});});
   const dates=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
   if (!dates.length) return `<div class="page-title">Log</div>
     <div class="empty" style="margin-top:32px"><div class="empty-ico">📜</div>
-    <div class="empty-txt">Nothing logged yet.<br>Complete tasks or take your meds!</div></div>`;
+    <div class="empty-txt">Nothing logged yet.<br>Complete some tasks!</div></div>`;
   let h=`<div class="page-title">Log</div>`;
   dates.forEach(ds=>{
     const entries=byDate[ds].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
@@ -2311,53 +2076,11 @@ function viewLog() {
             <button class="task-edit-btn" data-a="open-log-edit" data-type="recur" data-id="${e.data.id}" title="Edit">✎</button>
             <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="recur" data-id="${e.data.id}" title="Delete">✕</button></div>`;
         }
-      } else {
-        const m=getmed(e.data.medId), sk=e.data.skipped;
-        h+=`<div class="log-item" style="${sk?'opacity:.55':''}"><span class="log-ico">${sk?'⊘':'💊'}</span>
-          <div class="log-body">${m?.name||'?'}${sk?` <span style="font-size:10px;font-weight:700;color:var(--text-3)">SKIPPED</span>`:''}
-            <br><span class="log-sub">${m?.full||''}</span></div>
-          <div class="log-time">${fmtTime(e.ts)}</div>
-          <button class="task-edit-btn" data-a="open-log-edit" data-type="med" data-id="${e.data.id}" title="Edit">✎</button>
-          <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="med" data-id="${e.data.id}" title="Delete">✕</button></div>`;
       }
     });
   });
   return h;
 }
-
-// ═══════════════════════════════════════════════════════════
-//  MED SETTINGS MODAL
-// ═══════════════════════════════════════════════════════════
-
-function openMedSettings() {
-  if (document.getElementById('med-modal')) return;
-  const rows=MEDS.map(m=>`
-    <div class="m-toggle-row">
-      <div><div class="m-tgl-lbl">${m.name} — ${m.full}</div>
-        <div class="m-tgl-sub">${m.type==='seasonal'?'Seasonal — toggle on during allergy season':m.skippable?'Daily · OK to skip occasionally':'Daily · core'}</div></div>
-      ${m.type==='seasonal'
-        ?`<button class="toggle ${medActive(m.id)?'on':''}" data-a="toggle-seasonal" data-med="${m.id}"></button>`
-        :`<div style="font-size:11px;color:var(--text-3)">always on</div>`}
-    </div>`).join('');
-  const el=document.createElement('div');
-  el.id='med-modal'; el.className='modal-ov';
-  el.innerHTML=`<div class="modal-sheet"><div class="modal-title">Meds & Vitamins</div>${rows}
-    <button class="modal-done" data-a="close-modal">Done</button></div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{
-    const btn=e.target.closest('[data-a]');
-    if(!btn){if(e.target===el)closeModal();return;}
-    if(btn.dataset.a==='close-modal'){closeModal();return;}
-    if(btn.dataset.a==='toggle-seasonal'){
-      const mid=btn.dataset.med;
-      settings.seasonalMeds=settings.seasonalMeds||{};
-      settings.seasonalMeds[mid]=!settings.seasonalMeds[mid];
-      btn.classList.toggle('on',!!settings.seasonalMeds[mid]);
-      save();
-    }
-  });
-}
-function closeModal(){const el=document.getElementById('med-modal');if(el)el.remove();save();if(curView==='brief')rv();}
 
 function closeLogEditModal(){const el=document.getElementById('log-edit-modal');if(el)el.remove();}
 function openLogEditSheet(type, id) {
@@ -2365,10 +2088,9 @@ function openLogEditSheet(type, id) {
   let entry, ts;
   if(type==='task')       { entry=tasks.find(x=>x.id===id);    ts=entry?.completedAt; }
   else if(type==='recur') { entry=recurLog.find(x=>x.id===id); ts=entry?.completedAt; }
-  else                    { entry=medLogs.find(x=>x.id===id);   ts=entry?.takenAt; }
   if(!entry||!ts) return;
   const dateVal=ts.slice(0,10), timeVal=ts.slice(11,16);
-  const label=type==='task'?esc(entry.title):type==='recur'?esc(entry.title):(getmed(entry.medId)?.name||'?');
+  const label=type==='task'?esc(entry.title):type==='recur'?esc(entry.title):'';
   let extraFields='';
   if(type==='task') {
     const cats=CATS.map(c=>`<option value="${c.id}"${(entry.category||'misc')===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
@@ -3011,10 +2733,6 @@ document.addEventListener('click', e=>{
   const a=btn.dataset.a, id=btn.dataset.id;
 
   switch(a) {
-    case 'log-med':  toggleMed(btn.dataset.med); break;
-    case 'skip-med': skipMed(btn.dataset.med); break;
-    case 'med-settings': openMedSettings(); break;
-
     case 'complete':
       btn.classList.add('anim-pop');
       setTimeout(()=>completeTask(id),180); break;
@@ -3148,8 +2866,6 @@ document.addEventListener('click', e=>{
           const cv=document.getElementById('le-cat')?.value;
           if(cv) r.cat=cv;
         }
-      } else {
-        const m=medLogs.find(x=>x.id===id); if(m) m.takenAt=newTs;
       }
       save(); closeLogEditModal(); showToast('Updated ✓'); rv(); break;
     }
@@ -3161,8 +2877,6 @@ document.addEventListener('click', e=>{
         const t=tasks.find(x=>x.id===id); if(t) { delete t.completedAt; delete t.completedChunks; }
       } else if(ltype==='recur') {
         recurLog=recurLog.filter(x=>x.id!==id);
-      } else {
-        medLogs=medLogs.filter(x=>x.id!==id);
       }
       save(); closeLogEditModal(); rv(); break;
     }
