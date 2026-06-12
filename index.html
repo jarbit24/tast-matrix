@@ -533,9 +533,8 @@ function initSync() {
           const localSavedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
           if (cloudSavedAt <= localSavedAt) return; // local is same or newer — don't overwrite
           tasks    = d.tasks    || [];
-          medLogs  = d.medLogs  || [];
           recurLog = d.recurLog || [];
-          settings = d.settings || {seasonalMeds:{bloom:false}};
+          settings = d.settings || {};
           projects = d.projects || [];
           const today = todayStr();
           if (d.plate && d.plate.date === today) plate = d.plate;
@@ -543,7 +542,6 @@ function initSync() {
           // Mirror to localStorage (including cloud's savedAt so we don't re-push)
           try {
             localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-            localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
             localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
             localStorage.setItem('tm_settings', JSON.stringify(settings));
             localStorage.setItem('tm_plate',    JSON.stringify(plate));
@@ -565,7 +563,7 @@ function _pushToCloud() {
   localStorage.setItem('tm_savedAt', savedAt.toString());
   const clean = o => JSON.parse(JSON.stringify(o));
   _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-    .set(clean({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt}));
+    .set(clean({tasks, recurLog, settings, plate, ctx, projects, savedAt}));
 }
 
 function forcePushToCloud() {
@@ -583,16 +581,14 @@ function forcePullFromCloud() {
       if (!snap.exists) { showToast('No cloud data found'); return; }
       const d = snap.data();
       tasks    = d.tasks    || [];
-      medLogs  = d.medLogs  || [];
       recurLog = d.recurLog || [];
-      settings = d.settings || {seasonalMeds:{bloom:false}};
+      settings = d.settings || {};
       projects = d.projects || [];
       const today = todayStr();
       if (d.plate && d.plate.date === today) plate = d.plate;
       if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
       try {
         localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-        localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
         localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
         localStorage.setItem('tm_settings', JSON.stringify(settings));
         localStorage.setItem('tm_plate',    JSON.stringify(plate));
@@ -643,9 +639,8 @@ function signOutGoogle() {
 // ═══════════════════════════════════════════════════════════
 
 let tasks    = [];   // {id,title,category,time,effort,deadline,leadTime,recurrence,nextDue,chunks,createdAt,completedAt,projectId?,phaseId?}
-let medLogs  = [];   // {id,medId,takenAt}
 let recurLog = [];   // {id,taskId,title,completedAt} — history of recurring task completions
-let settings = {seasonalMeds:{bloom:false}};
+let settings = {};
 let plate    = {date:'',ids:[]};
 let ctx      = {date:'',time:null,energy:null};
 let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
@@ -715,7 +710,6 @@ function chunkHints(t) {
 }
 const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
 const getcat    = id => { const r=id?(CAT_ALIAS[id]||id):null; return (r&&CATS.find(c=>c.id===r))||{id:'_none',name:'Uncategorized',emoji:'📌',color:'#aaa',textColor:'white'}; };
-const getmed    = id => MEDS.find(m=>m.id===id);
 
 function daysUntil(dl) {
   if (!dl) return null;
@@ -1102,12 +1096,8 @@ function seedTasks() {
   });
 }
 
-// ═══════════════════════════════════════════════════════════
-//  SEED LOG  (one-time history import from Sheet7.csv)
-// ═══════════════════════════════════════════════════════════
-
-// Format: ["YYYY-MM-DDTHH:MM:SS","medId"]  — one per med per day (deduplicated), local time
-const SEED_MEDLOG = [
+// Format: ["YYYY-MM-DDTHH:MM:SS","medId"]  — REMOVED
+const SEED_MEDLOG_REMOVED = [
 ["2026-05-18T08:05:00","fsh"],["2026-05-18T08:05:47","evp"],["2026-05-18T08:05:42","esc10"],["2026-05-18T08:05:36","d2000"],["2026-05-18T06:43:37","ws9"],
 ["2026-05-17T09:05:53","fsh"],["2026-05-17T09:05:47","evp"],["2026-05-17T09:05:42","esc10"],["2026-05-17T09:05:36","d2000"],["2026-05-17T08:43:37","ws9"],
 ["2026-05-16T10:36:07","fsh"],["2026-05-16T10:36:01","evp"],["2026-05-16T10:36:28","esc10"],["2026-05-16T10:36:20","d2000"],["2026-05-16T08:53:37","ws9"],
@@ -1335,9 +1325,6 @@ const SEED_RLOG = [
 const RLOG_CAT = {P:'personal',A:'comp-admin',B:'crafts-work',M:'misc'};
 
 function seedLog() {
-  SEED_MEDLOG.forEach(([ts, medId]) => {
-    medLogs.push({id:newId(), medId, takenAt: ts});
-  });
   SEED_RLOG.forEach(([ts, title, catCode]) => {
     recurLog.push({id:newId(), taskId:null, title, completedAt: ts, cat: RLOG_CAT[catCode]||'misc'});
   });
@@ -1351,7 +1338,6 @@ function save() {
   try {
     const savedAt = Date.now();
     localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-    localStorage.setItem('tm_mlogs',    JSON.stringify(medLogs));
     localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
     localStorage.setItem('tm_settings', JSON.stringify(settings));
     localStorage.setItem('tm_plate',    JSON.stringify(plate));
@@ -1365,16 +1351,15 @@ function save() {
     // Firestore rejects undefined values — strip them via JSON round-trip
     const clean = o => JSON.parse(JSON.stringify(o));
     _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-      .set(clean({tasks, medLogs, recurLog, settings, plate, ctx, projects, savedAt})).catch(()=>{});
+      .set(clean({tasks, recurLog, settings, plate, ctx, projects, savedAt})).catch(()=>{});
   }
 }
 
 function load() {
   try {
     tasks    = JSON.parse(localStorage.getItem('tm_tasks')   ||'[]');
-    medLogs  = JSON.parse(localStorage.getItem('tm_mlogs')  ||'[]');
     recurLog = JSON.parse(localStorage.getItem('tm_rlog')   ||'[]');
-    settings = JSON.parse(localStorage.getItem('tm_settings')||'{"seasonalMeds":{"bloom":false}}');
+    settings = JSON.parse(localStorage.getItem('tm_settings')||'{}');
     plate    = JSON.parse(localStorage.getItem('tm_plate')  ||'{"date":"","ids":[]}');
     ctx      = JSON.parse(localStorage.getItem('tm_ctx')    ||'{"date":"","time":null,"energy":null}');
     projects = JSON.parse(localStorage.getItem('tm_projects')||'[]');
@@ -1386,54 +1371,10 @@ function load() {
       localStorage.setItem('tm_seeded','1');
       save();
     }
-    if (!localStorage.getItem('tm_log_seeded_v2')) {
-      medLogs=[]; recurLog=[];
-      seedLog();
-      localStorage.setItem('tm_log_seeded_v2','1');
-      save();
-    }
   } catch(e) {
-    tasks=[];medLogs=[];recurLog=[];settings={seasonalMeds:{bloom:false}};
+    tasks=[];recurLog=[];settings={};
     plate={date:todayStr(),ids:[]};ctx={date:todayStr(),time:null,energy:null};
   }
-}
-
-// ═══════════════════════════════════════════════════════════
-//  MEDS
-// ═══════════════════════════════════════════════════════════
-
-const medActive     = id => { const m=getmed(id); return m&&(m.type!=='seasonal'||!!(settings.seasonalMeds||{})[id]); };
-const medTakenToday   = id => medLogs.some(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&!l.skipped);
-const medSkippedToday = id => medLogs.some(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&l.skipped);
-const medLastTime     = id => { const ls=medLogs.filter(l=>l.medId===id&&l.takenAt.startsWith(todayStr())&&!l.skipped); return ls.length?ls[ls.length-1].takenAt:null; };
-
-function toggleMed(medId) {
-  const m=getmed(medId); if(!m) return;
-  if(!medActive(medId)&&m.type==='seasonal'){showToast(`${m.name} is seasonal — enable in ⚙ settings`);return;}
-  const takenIdx  =medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&!l.skipped);
-  const skippedIdx=medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&l.skipped);
-  if(takenIdx!==-1){
-    medLogs.splice(takenIdx,1); showToast(`${m.name} cleared`);
-  } else {
-    if(skippedIdx!==-1) medLogs.splice(skippedIdx,1);
-    medLogs.push({id:newId(),medId,takenAt:localISOStr()});
-    showToast(`${m.name} logged ✓`);
-  }
-  save(); if(curView==='brief') rv();
-}
-
-function skipMed(medId) {
-  const m=getmed(medId); if(!m) return;
-  const takenIdx  =medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&!l.skipped);
-  const skippedIdx=medLogs.findIndex(l=>l.medId===medId&&l.takenAt.startsWith(todayStr())&&l.skipped);
-  if(skippedIdx!==-1){
-    medLogs.splice(skippedIdx,1); showToast(`${m.name} cleared`);
-  } else {
-    if(takenIdx!==-1) medLogs.splice(takenIdx,1);
-    medLogs.push({id:newId(),medId,takenAt:localISOStr(),skipped:true});
-    showToast(`${m.name} skipped`);
-  }
-  save(); if(curView==='brief') rv();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1450,7 +1391,7 @@ function addTask(d) {
     recurrence: d.recurrence||null,
     nextDue: isRecur ? firstDue : null,
     chunks: d.chunks&&d.chunks.length ? d.chunks : null,
-    createdAt:new Date().toISOString(), completedAt:null,
+    createdAt:localISOStr(), completedAt:null,
   });
   save();
 }
@@ -1728,30 +1669,6 @@ function chunkListHtml(t, inPlate=false) {
   return `<div class="chunk-list">${rowsHtml}${toggleBtn}</div>`;
 }
 
-function medsSection() {
-  const btns=MEDS.map(m=>{
-    if(m.type==='seasonal'&&!medActive(m.id)) return '';
-    const taken=medTakenToday(m.id), skipped=medSkippedToday(m.id), lt=medLastTime(m.id);
-    const state=taken?'taken':skipped?'skipped':'';
-    return `<div class="med-group">
-      <button class="med-btn ${state}" data-a="log-med" data-med="${m.id}"
-              style="${taken?`border-color:${m.color};`:''}">
-        <span class="med-ck">${taken?'✓':'·'}</span>
-        <span class="med-name" style="color:${taken?m.color:'var(--text)'}">${m.name}</span>
-        <span class="med-time">${lt&&!skipped?fmtTime(lt):'—'}</span>
-      </button>
-      <button class="med-skip ${skipped?'active':''}" data-a="skip-med" data-med="${m.id}">
-        ${skipped?'skipped ✕':'skip'}
-      </button>
-    </div>`;
-  }).join('');
-  return `<div class="card">
-    <div class="meds-hd"><span class="meds-hd-label">Daily Log</span>
-      <button class="link-btn" data-a="med-settings">⚙ settings</button></div>
-    <div class="meds-row">${btns}</div>
-  </div>`;
-}
-
 // ═══════════════════════════════════════════════════════════
 //  VIEW: TODAY
 // ═══════════════════════════════════════════════════════════
@@ -1764,8 +1681,7 @@ function viewBrief() {
   const ctxSet  = ctx.time && ctx.energy;
 
   let h=`<div class="greeting">${greet()}, Jules</div>
-          <div class="date-str">${fmtDateFull(todayStr())}</div>
-          ${medsSection()}`;
+          <div class="date-str">${fmtDateFull(todayStr())}</div>`;
 
 
 
@@ -1961,7 +1877,7 @@ function doCreateProjectFromAdd() {
   const title=(document.getElementById('ap-title')?.value||'').trim();
   if(!title){showToast('Name required');return;}
   const color=PROJ_PALETTE[projects.length % PROJ_PALETTE.length];
-  projects.push({id:newId(),title,color,createdAt:new Date().toISOString(),phases:[]});
+  projects.push({id:newId(),title,color,createdAt:localISOStr(),phases:[]});
   save(); showToast('Project created ✓'); navigate('projects');
 }
 
@@ -2249,15 +2165,13 @@ function taskRow(t) {
 function viewLog() {
   const done=[...tasks.filter(t=>t.completedAt)].sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
   const rlog=[...recurLog].sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
-  const mlogs=[...medLogs].sort((a,b)=>new Date(b.takenAt)-new Date(a.takenAt));
   const byDate={};
   done.forEach(t=>{const d=t.completedAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'task',ts:t.completedAt,data:t});});
   rlog.forEach(l=>{const d=l.completedAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'recur',ts:l.completedAt,data:l});});
-  mlogs.forEach(l=>{const d=l.takenAt.slice(0,10);(byDate[d]||(byDate[d]=[])).push({type:'med',ts:l.takenAt,data:l});});
   const dates=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
   if (!dates.length) return `<div class="page-title">Log</div>
     <div class="empty" style="margin-top:32px"><div class="empty-ico">📜</div>
-    <div class="empty-txt">Nothing logged yet.<br>Complete tasks or take your meds!</div></div>`;
+    <div class="empty-txt">Nothing logged yet.<br>Complete some tasks!</div></div>`;
   let h=`<div class="page-title">Log</div>`;
   dates.forEach(ds=>{
     const entries=byDate[ds].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
@@ -2287,53 +2201,11 @@ function viewLog() {
             <button class="task-edit-btn" data-a="open-log-edit" data-type="recur" data-id="${e.data.id}" title="Edit">✎</button>
             <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="recur" data-id="${e.data.id}" title="Delete">✕</button></div>`;
         }
-      } else {
-        const m=getmed(e.data.medId), sk=e.data.skipped;
-        h+=`<div class="log-item" style="${sk?'opacity:.55':''}"><span class="log-ico">${sk?'⊘':'💊'}</span>
-          <div class="log-body">${m?.name||'?'}${sk?` <span style="font-size:10px;font-weight:700;color:var(--text-3)">SKIPPED</span>`:''}
-            <br><span class="log-sub">${m?.full||''}</span></div>
-          <div class="log-time">${fmtTime(e.ts)}</div>
-          <button class="task-edit-btn" data-a="open-log-edit" data-type="med" data-id="${e.data.id}" title="Edit">✎</button>
-          <button class="task-edit-btn log-del-btn" data-a="delete-log-entry" data-type="med" data-id="${e.data.id}" title="Delete">✕</button></div>`;
       }
     });
   });
   return h;
 }
-
-// ═══════════════════════════════════════════════════════════
-//  MED SETTINGS MODAL
-// ═══════════════════════════════════════════════════════════
-
-function openMedSettings() {
-  if (document.getElementById('med-modal')) return;
-  const rows=MEDS.map(m=>`
-    <div class="m-toggle-row">
-      <div><div class="m-tgl-lbl">${m.name} — ${m.full}</div>
-        <div class="m-tgl-sub">${m.type==='seasonal'?'Seasonal — toggle on during allergy season':m.skippable?'Daily · OK to skip occasionally':'Daily · core'}</div></div>
-      ${m.type==='seasonal'
-        ?`<button class="toggle ${medActive(m.id)?'on':''}" data-a="toggle-seasonal" data-med="${m.id}"></button>`
-        :`<div style="font-size:11px;color:var(--text-3)">always on</div>`}
-    </div>`).join('');
-  const el=document.createElement('div');
-  el.id='med-modal'; el.className='modal-ov';
-  el.innerHTML=`<div class="modal-sheet"><div class="modal-title">Meds & Vitamins</div>${rows}
-    <button class="modal-done" data-a="close-modal">Done</button></div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{
-    const btn=e.target.closest('[data-a]');
-    if(!btn){if(e.target===el)closeModal();return;}
-    if(btn.dataset.a==='close-modal'){closeModal();return;}
-    if(btn.dataset.a==='toggle-seasonal'){
-      const mid=btn.dataset.med;
-      settings.seasonalMeds=settings.seasonalMeds||{};
-      settings.seasonalMeds[mid]=!settings.seasonalMeds[mid];
-      btn.classList.toggle('on',!!settings.seasonalMeds[mid]);
-      save();
-    }
-  });
-}
-function closeModal(){const el=document.getElementById('med-modal');if(el)el.remove();save();if(curView==='brief')rv();}
 
 function closeLogEditModal(){const el=document.getElementById('log-edit-modal');if(el)el.remove();}
 function openLogEditSheet(type, id) {
@@ -2341,10 +2213,9 @@ function openLogEditSheet(type, id) {
   let entry, ts;
   if(type==='task')       { entry=tasks.find(x=>x.id===id);    ts=entry?.completedAt; }
   else if(type==='recur') { entry=recurLog.find(x=>x.id===id); ts=entry?.completedAt; }
-  else                    { entry=medLogs.find(x=>x.id===id);   ts=entry?.takenAt; }
   if(!entry||!ts) return;
   const dateVal=ts.slice(0,10), timeVal=ts.slice(11,16);
-  const label=type==='task'?esc(entry.title):type==='recur'?esc(entry.title):(getmed(entry.medId)?.name||'?');
+  const label=type==='task'?esc(entry.title):type==='recur'?esc(entry.title):'';
   let extraFields='';
   if(type==='task') {
     const cats=CATS.map(c=>`<option value="${c.id}"${(entry.category||'misc')===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
@@ -2777,7 +2648,7 @@ function doCreateProject() {
   const title=(document.getElementById('np-title')?.value||'').trim();
   if(!title){showToast('Name required');return;}
   const color=PROJ_PALETTE[projects.length % PROJ_PALETTE.length];
-  projects.push({id:newId(),title,color,createdAt:new Date().toISOString(),phases:[]});
+  projects.push({id:newId(),title,color,createdAt:localISOStr(),phases:[]});
   save(); closeProjectModal(); rv(); showToast('Project created ✓');
 }
 
@@ -2913,7 +2784,7 @@ function doCreateProjectTask(projId, phaseId, btn) {
   tasks.push({
     id:newId(), title, category,
     time, effort, deadline, recurrence, nextDue,
-    chunks:null, createdAt:new Date().toISOString(), completedAt:null,
+    chunks:null, createdAt:localISOStr(), completedAt:null,
     projectId:projId, phaseId:phaseId||undefined,
     description:desc, link,
   });
@@ -2988,10 +2859,6 @@ document.addEventListener('click', e=>{
   const a=btn.dataset.a, id=btn.dataset.id;
 
   switch(a) {
-    case 'log-med':  toggleMed(btn.dataset.med); break;
-    case 'skip-med': skipMed(btn.dataset.med); break;
-    case 'med-settings': openMedSettings(); break;
-
     case 'complete':
       btn.classList.add('anim-pop');
       setTimeout(()=>completeTask(id),180); break;
@@ -3125,8 +2992,6 @@ document.addEventListener('click', e=>{
           const cv=document.getElementById('le-cat')?.value;
           if(cv) r.cat=cv;
         }
-      } else {
-        const m=medLogs.find(x=>x.id===id); if(m) m.takenAt=newTs;
       }
       save(); closeLogEditModal(); showToast('Updated ✓'); rv(); break;
     }
@@ -3138,8 +3003,6 @@ document.addEventListener('click', e=>{
         const t=tasks.find(x=>x.id===id); if(t) { delete t.completedAt; delete t.completedChunks; }
       } else if(ltype==='recur') {
         recurLog=recurLog.filter(x=>x.id!==id);
-      } else {
-        medLogs=medLogs.filter(x=>x.id!==id);
       }
       save(); closeLogEditModal(); rv(); break;
     }
