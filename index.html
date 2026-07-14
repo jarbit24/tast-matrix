@@ -507,7 +507,148 @@ const FB_CONFIG = {
   appId:             "1:441740578783:web:2009c34fa627bd29b83e6a"
 };
 
-let _db = null, _currentUser = null, _fbUnsub = null, _syncConflict = false;
+let _db = null, _currentUser = null, _fbUnsub = null;
+let _dirty = false, _syncing = false, _pushTimer = null, _lastSyncAt = null, _saveSeq = 0;
+// _meta: per-device sync metadata — tombstones for deletions + timestamps for singleton objects
+let _meta = {del:{}, settingsU:0, plateU:0, ctxU:0};
+// _shadow: JSON snapshots of last-saved state, used to detect which items changed in save()
+let _shadow = null;
+
+const TOMBSTONE_TTL = 90*24*3600*1000; // keep deletion markers 90 days
+
+function _docRef() { return _db.collection('users').doc(_currentUser.uid).collection('data').doc('state'); }
+
+function _loadMeta() {
+  try { _meta = Object.assign({del:{},settingsU:0,plateU:0,ctxU:0}, JSON.parse(localStorage.getItem('tm_meta')||'{}')); }
+  catch(e) { _meta = {del:{},settingsU:0,plateU:0,ctxU:0}; }
+}
+function _saveMeta() { try { localStorage.setItem('tm_meta', JSON.stringify(_meta)); } catch(e){} }
+
+// Signature of an item excluding its own updated-stamp (so stamping doesn't look like a change)
+function _itemSig(o) { const c = Object.assign({}, o); delete c.u; return JSON.stringify(c); }
+
+function _initShadow() {
+  _shadow = {tasks:{}, recurLog:{}, projects:{},
+             settings:JSON.stringify(settings), plate:JSON.stringify(plate), ctx:JSON.stringify(ctx)};
+  tasks.forEach(t   => { if(t&&t.id) _shadow.tasks[t.id]    = _itemSig(t); });
+  recurLog.forEach(t=> { if(t&&t.id) _shadow.recurLog[t.id] = _itemSig(t); });
+  projects.forEach(t=> { if(t&&t.id) _shadow.projects[t.id] = _itemSig(t); });
+}
+
+// Diff current state against shadow: stamp changed/new items with u=now,
+// record tombstones for items that disappeared.
+function _stampChanges() {
+  if (!_shadow) _initShadow();
+  const now = Date.now();
+  [['tasks',tasks],['recurLog',recurLog],['projects',projects]].forEach(([key,arr]) => {
+    const prev = _shadow[key], seen = {};
+    arr.forEach(it => {
+      if (!it || !it.id) return;
+      seen[it.id] = 1;
+      const sig = _itemSig(it);
+      if (prev[it.id] !== sig) { it.u = now; prev[it.id] = sig; }
+      if (_meta.del[it.id] && (it.u||0) >= _meta.del[it.id]) delete _meta.del[it.id];
+    });
+    Object.keys(prev).forEach(id => { if (!seen[id]) { _meta.del[id] = now; delete prev[id]; } });
+  });
+  const sS = JSON.stringify(settings); if (sS !== _shadow.settings) { _meta.settingsU = now; _shadow.settings = sS; }
+  const pS = JSON.stringify(plate);    if (pS !== _shadow.plate)    { _meta.plateU    = now; _shadow.plate    = pS; }
+  const cS = JSON.stringify(ctx);      if (cS !== _shadow.ctx)      { _meta.ctxU      = now; _shadow.ctx      = cS; }
+  _saveMeta();
+}
+
+// Merge two id-keyed arrays: per-item newest-wins, tombstones remove deleted items.
+function _mergeArrays(localArr, cloudArr, del) {
+  const m = {};
+  (cloudArr||[]).forEach(it => { if (it && it.id) m[it.id] = it; });
+  (localArr||[]).forEach(it => {
+    if (!it || !it.id) return;
+    const o = m[it.id];
+    if (!o) { m[it.id] = it; return; }
+    const lu = it.u||0, cu = o.u||0;
+    if (lu > cu) m[it.id] = it;
+    else if (lu === cu && JSON.stringify(it) > JSON.stringify(o)) m[it.id] = it; // deterministic tie-break
+  });
+  return Object.values(m).filter(it => !(del[it.id] && del[it.id] >= (it.u||0)));
+}
+
+function _mergeState(loc, cld) {
+  const del = Object.assign({}, cld.del||{});
+  Object.keys(loc.del||{}).forEach(id => { if (!del[id] || loc.del[id] > del[id]) del[id] = loc.del[id]; });
+  const cutoff = Date.now() - TOMBSTONE_TTL;
+  Object.keys(del).forEach(id => { if (del[id] < cutoff) delete del[id]; });
+  const pick = (lU,cU,lV,cV) => (cU||0) > (lU||0) ? [cV,cU||0] : [lV,lU||0];
+  const [settingsV, settingsU] = pick(loc.settingsU, cld.settingsU, loc.settings, cld.settings);
+  const [plateV,    plateU]    = pick(loc.plateU,    cld.plateU,    loc.plate,    cld.plate);
+  const [ctxV,      ctxU]      = pick(loc.ctxU,      cld.ctxU,      loc.ctx,      cld.ctx);
+  return {
+    tasks:    _mergeArrays(loc.tasks,    cld.tasks,    del),
+    recurLog: _mergeArrays(loc.recurLog, cld.recurLog, del),
+    projects: _mergeArrays(loc.projects, cld.projects, del),
+    settings: settingsV||{}, plate: plateV, ctx: ctxV,
+    del, settingsU, plateU, ctxU,
+    savedAt: Date.now(), // legacy field, kept so older clients still accept updates
+  };
+}
+
+function _localState() {
+  return {tasks, recurLog, projects, settings, plate, ctx,
+          del:_meta.del, settingsU:_meta.settingsU, plateU:_meta.plateU, ctxU:_meta.ctxU};
+}
+
+// Comparable signature of a whole state (ignores savedAt)
+function _stateSig(st) {
+  return JSON.stringify([st.tasks||[], st.recurLog||[], st.projects||[], st.settings||{},
+                         st.plate||null, st.ctx||null, st.del||{},
+                         st.settingsU||0, st.plateU||0, st.ctxU||0]);
+}
+
+// Adopt a merged state as the new local truth
+function _applyState(st) {
+  tasks    = st.tasks    || [];
+  recurLog = st.recurLog || [];
+  projects = st.projects || [];
+  settings = st.settings || {};
+  const today = todayStr();
+  plate = (st.plate && st.plate.date === today) ? st.plate : {date:today, ids:[]};
+  ctx   = (st.ctx   && st.ctx.date   === today) ? st.ctx   : {date:today, time:null, energy:null};
+  plate.ids = plate.ids.filter(id => tasks.some(t => t.id === id));
+  _meta.del = st.del||{}; _meta.settingsU = st.settingsU||0; _meta.plateU = st.plateU||0; _meta.ctxU = st.ctxU||0;
+  _persistLocal(); _saveMeta(); _initShadow();
+}
+
+function _schedulePush(ms) { clearTimeout(_pushTimer); _pushTimer = setTimeout(_cloudSync, ms); }
+
+// Read-merge-write inside a transaction: local changes can only ADD to the cloud
+// doc or update items this device actually touched — never wipe another device's work.
+function _cloudSync() {
+  if (!_db || !_currentUser || _syncing) return;
+  _syncing = true;
+  const seqAtStart = _saveSeq;
+  const clean = o => JSON.parse(JSON.stringify(o));
+  const ref = _docRef();
+  let mergedOut = null, cloudChanged = false;
+  _db.runTransaction(tx => tx.get(ref).then(snap => {
+    const loc = clean(_localState());
+    const cld = snap.exists ? snap.data() : {};
+    mergedOut = _mergeState(loc, cld);
+    cloudChanged = _stateSig(mergedOut) !== _stateSig(cld);
+    if (cloudChanged) tx.set(ref, clean(mergedOut));
+  })).then(() => {
+    _syncing = false; _dirty = false; _lastSyncAt = new Date();
+    if (_saveSeq !== seqAtStart) { _dirty = true; _schedulePush(500); } // user edited mid-sync — go again
+    else if (mergedOut && _stateSig(mergedOut) !== _stateSig(_localState())) { _applyState(mergedOut); rv(); }
+    _updateSyncBar();
+  }).catch(() => {
+    _syncing = false; _dirty = true; // offline or contention — retried on focus/online/interval
+    _updateSyncBar();
+  });
+}
+
+function syncNow() {
+  if (!_currentUser) { showToast('Not signed in'); return; }
+  _dirty = true; _cloudSync(); showToast('Syncing…');
+}
 
 function initSync() {
   if (!FB_CONFIG.apiKey || FB_CONFIG.apiKey === 'REPLACE_ME') return;
@@ -523,98 +664,38 @@ function initSync() {
     _updateSyncBar();
     if (user) {
       if (_fbUnsub) _fbUnsub();
-      _fbUnsub = _db.collection('users').doc(user.uid).collection('data').doc('state')
-        .onSnapshot({includeMetadataChanges:true}, snap => {
-          if (snap.metadata.hasPendingWrites) return; // our own write — skip
-          if (!snap.exists) { _pushToCloud(); return; } // no cloud data yet — push local up
-          const d = snap.data();
-          // Timestamp-based conflict resolution: only accept cloud data if it's newer
-          const cloudSavedAt = d.savedAt || 0;
-          const localSavedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
-          if (cloudSavedAt <= localSavedAt) return; // local is same or newer — don't overwrite
-          tasks    = d.tasks    || [];
-          recurLog = d.recurLog || [];
-          settings = d.settings || {};
-          projects = d.projects || [];
-          const today = todayStr();
-          if (d.plate && d.plate.date === today) plate = d.plate;
-          if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
-          // Mirror to localStorage (including cloud's savedAt so we don't re-push)
-          try {
-            localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-            localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
-            localStorage.setItem('tm_settings', JSON.stringify(settings));
-            localStorage.setItem('tm_plate',    JSON.stringify(plate));
-            localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
-            localStorage.setItem('tm_projects', JSON.stringify(projects));
-            localStorage.setItem('tm_savedAt',  cloudSavedAt.toString());
-          } catch(e){}
-          rv();
-        });
+      _fbUnsub = _docRef().onSnapshot(snap => {
+        if (snap.metadata && snap.metadata.hasPendingWrites) return; // our own write — skip
+        if (!snap.exists) { _dirty = true; _schedulePush(0); return; } // no cloud data yet — push local up
+        const cld = snap.data();
+        const loc = _localState();
+        const merged = _mergeState(loc, cld);
+        if (_stateSig(merged) !== _stateSig(loc)) { _applyState(merged); rv(); }
+        if (_stateSig(merged) !== _stateSig(cld)) { _dirty = true; _schedulePush(500); }
+        _lastSyncAt = new Date();
+        _updateSyncBar();
+      });
     } else {
       if (_fbUnsub) { _fbUnsub(); _fbUnsub = null; }
     }
   });
-}
 
-function _pushToCloud() {
-  if (!_db || !_currentUser) return;
-  const savedAt = Date.now();
-  localStorage.setItem('tm_savedAt', savedAt.toString());
-  const clean = o => JSON.parse(JSON.stringify(o));
-  _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-    .set(clean({tasks, recurLog, settings, plate, ctx, projects, savedAt}));
-}
-
-function forcePushToCloud() {
-  if (!_currentUser) { showToast('Not signed in'); return; }
-  _syncConflict = false;
-  _pushToCloud();
-  _updateSyncBar();
-  showToast('Pushed local data to cloud ✓');
-}
-
-function forcePullFromCloud() {
-  if (!_db || !_currentUser) { showToast('Not signed in'); return; }
-  _db.collection('users').doc(_currentUser.uid).collection('data').doc('state').get()
-    .then(snap => {
-      if (!snap.exists) { showToast('No cloud data found'); return; }
-      const d = snap.data();
-      tasks    = d.tasks    || [];
-      recurLog = d.recurLog || [];
-      settings = d.settings || {};
-      projects = d.projects || [];
-      const today = todayStr();
-      if (d.plate && d.plate.date === today) plate = d.plate;
-      if (d.ctx   && d.ctx.date   === today) ctx   = d.ctx;
-      try {
-        localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
-        localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
-        localStorage.setItem('tm_settings', JSON.stringify(settings));
-        localStorage.setItem('tm_plate',    JSON.stringify(plate));
-        localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
-        localStorage.setItem('tm_projects', JSON.stringify(projects));
-        localStorage.setItem('tm_savedAt',  (d.savedAt||0).toString());
-      } catch(e){}
-      _syncConflict = false;
-      _updateSyncBar();
-      rv();
-      showToast('Pulled latest data from cloud ✓');
-    })
-    .catch(e => showToast('Pull failed: ' + e.message));
+  // Stale-tab protection: re-merge whenever the tab wakes up or comes back online
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) _cloudSync(); });
+  window.addEventListener('focus',  () => _cloudSync());
+  window.addEventListener('online', () => _cloudSync());
+  setInterval(() => { if (_dirty) _cloudSync(); }, 30000); // retry unsent changes
 }
 
 function _updateSyncBar() {
   const bar = document.getElementById('sync-bar');
   if (!bar) return;
   if (_currentUser) {
-    if (false) {
-    } else {
-      bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)}</span>`
-        + `<button class="sync-btn sync-signout" onclick="forcePullFromCloud()" title="Force pull latest data from cloud">↓ pull</button>`
-        + `<button class="sync-btn sync-signout" onclick="forcePushToCloud()" title="Force push local data to cloud">↑ push</button>`
-        + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
-    }
+    const when = _lastSyncAt ? _lastSyncAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '…';
+    const state = _dirty ? '⟳ syncing' : `synced ${when}`;
+    bar.innerHTML = `<span class="sync-ok">☁ ${esc(_currentUser.email)} · ${state}</span>`
+      + `<button class="sync-btn sync-signout" onclick="syncNow()" title="Sync now">⟳ sync</button>`
+      + `<button class="sync-btn sync-signout" onclick="signOutGoogle()">sign out</button>`;
   } else {
     bar.innerHTML = `<button class="sync-btn sync-signin" onclick="signInWithGoogle()">☁ Sign in with Google to sync across devices</button>`;
   }
@@ -1334,25 +1415,24 @@ function seedLog() {
 //  STORAGE
 // ═══════════════════════════════════════════════════════════
 
-function save() {
+function _persistLocal() {
   try {
-    const savedAt = Date.now();
     localStorage.setItem('tm_tasks',    JSON.stringify(tasks));
     localStorage.setItem('tm_rlog',     JSON.stringify(recurLog));
     localStorage.setItem('tm_settings', JSON.stringify(settings));
     localStorage.setItem('tm_plate',    JSON.stringify(plate));
     localStorage.setItem('tm_ctx',      JSON.stringify(ctx));
     localStorage.setItem('tm_projects', JSON.stringify(projects));
-    localStorage.setItem('tm_savedAt',  savedAt.toString());
+    localStorage.setItem('tm_savedAt',  Date.now().toString()); // legacy, unused by new sync
   } catch(e){}
-  // Cloud sync (no-op if not signed in)
-  if (_db && _currentUser) {
-    const savedAt = parseInt(localStorage.getItem('tm_savedAt') || '0');
-    // Firestore rejects undefined values — strip them via JSON round-trip
-    const clean = o => JSON.parse(JSON.stringify(o));
-    _db.collection('users').doc(_currentUser.uid).collection('data').doc('state')
-      .set(clean({tasks, recurLog, settings, plate, ctx, projects, savedAt})).catch(()=>{});
-  }
+}
+
+function save() {
+  _saveSeq++;
+  _stampChanges();   // mark exactly what changed (per-item timestamps + tombstones)
+  _persistLocal();
+  _dirty = true;
+  _schedulePush(800); // debounced merge-push to cloud (no-op if signed out)
 }
 
 function load() {
@@ -1366,15 +1446,15 @@ function load() {
     const today = todayStr();
     if (plate.date!==today) plate={date:today,ids:[]};
     if (ctx.date  !==today) ctx  ={date:today,time:null,energy:null};
-    if (!localStorage.getItem('tm_seeded') && tasks.length===0) {
-      tasks = seedTasks();
-      localStorage.setItem('tm_seeded','1');
-      save();
-    }
+    // NOTE: seeding disabled — the cloud (Firestore) is now the source of truth.
+    // A fresh browser starts empty and fills in on Google sign-in. Re-enabling
+    // seeds would create duplicates, since the merge sync unions items by id.
   } catch(e) {
     tasks=[];recurLog=[];settings={};
     plate={date:todayStr(),ids:[]};ctx={date:todayStr(),time:null,energy:null};
   }
+  _loadMeta();
+  _initShadow();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3117,7 +3197,9 @@ load();
 initSync();
 
 // ── One-time seed: GGVI project task ────────────────────────
-if(!tasks.find(t=>t.title==='GGVI')) {
+// DISABLED: already delivered to the cloud; re-running on a fresh browser
+// would create a duplicate under the merge sync.
+if(false && !tasks.find(t=>t.title==='GGVI')) {
   addTask({
     title:'GGVI', category:'comp-admin', time:'high', effort:'high',
     deadline:'2026-06-15',
