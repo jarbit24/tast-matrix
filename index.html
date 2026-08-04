@@ -614,6 +614,7 @@ function _applyState(st) {
   ctx   = (st.ctx   && st.ctx.date   === today) ? st.ctx   : {date:today, time:null, energy:null};
   plate.ids = plate.ids.filter(id => tasks.some(t => t.id === id));
   _meta.del = st.del||{}; _meta.settingsU = st.settingsU||0; _meta.plateU = st.plateU||0; _meta.ctxU = st.ctxU||0;
+  _deriveDeadlines(); // deterministic, keeps deadlines consistent after merges
   _persistLocal(); _saveMeta(); _initShadow();
 }
 
@@ -881,10 +882,23 @@ function recurLabel(rec) {
 //  BRIEF VISIBILITY
 // ═══════════════════════════════════════════════════════════
 
+// Effective urgency in days: the soonest of the task's own due date and any
+// pending step's due date — so one late step is enough to put a task on fire.
+function urgencyDays(t) {
+  let d = null;
+  const dueDate = t.recurrence ? t.nextDue : t.deadline;
+  if (dueDate) d = daysUntil(dueDate);
+  if (t.chunks) t.chunks.forEach(c => {
+    if (c.completedAt || !c.dueDate) return;
+    const sd = daysUntil(c.dueDate);
+    if (sd !== null && (d === null || sd < d)) d = sd;
+  });
+  return d;
+}
+
 function briefStatus(task) {
-  const dueDate = task.recurrence ? task.nextDue : task.deadline;
-  if (!dueDate) return null;
-  const d = daysUntil(dueDate);
+  const d = urgencyDays(task);
+  if (d === null) return null;
   if (d < 0)  return 'overdue';
   if (d === 0) return 'today';
   return null;
@@ -1427,8 +1441,19 @@ function _persistLocal() {
   } catch(e){}
 }
 
+// Invariant: a non-recurring task with dated steps is due when its LAST step is
+// due. Changing/snoozing step dates moves the task deadline automatically.
+function _deriveDeadlines() {
+  tasks.forEach(t => {
+    if (t.recurrence || t.completedAt || !t.chunks || !t.chunks.length) return;
+    const stepDates = t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
+    if (stepDates.length) t.deadline = stepDates[stepDates.length-1];
+  });
+}
+
 function save() {
   _saveSeq++;
+  _deriveDeadlines(); // keep task deadlines in step (before change detection)
   _stampChanges();   // mark exactly what changed (per-item timestamps + tombstones)
   _persistLocal();
   _dirty = true;
@@ -1454,6 +1479,7 @@ function load() {
     plate={date:todayStr(),ids:[]};ctx={date:todayStr(),time:null,energy:null};
   }
   _loadMeta();
+  _deriveDeadlines(); // deterministic on every device — safe before shadow init
   _initShadow();
 }
 
@@ -1563,14 +1589,26 @@ function skipRecurring(id) {
 
 function snoozeTask(id, type) {
   const t=tasks.find(x=>x.id===id); if(!t) return;
+  const shiftDate = (ds, days) => {
+    const d=new Date(ds+'T12:00:00'); d.setDate(d.getDate()+days);
+    return d.toISOString().slice(0,10);
+  };
+  // Non-recurring task with dated steps: snooze shifts the pending steps,
+  // and the task deadline follows the last step (derived in save()).
+  if (!t.recurrence && t.chunks && t.chunks.some(c=>!c.completedAt&&c.dueDate) && (type==='1d'||type==='1w')) {
+    const days = type==='1d' ? 1 : 7;
+    t.chunks.forEach(c => { if (!c.completedAt && c.dueDate) c.dueDate = shiftDate(c.dueDate, days); });
+    plate.ids=plate.ids.filter(x=>x!==id);
+    save();
+    showToast(`Steps snoozed ${type==='1d'?'+1 day':'+1 week'} — due ${fmtNextDue(t.deadline)}`); rv();
+    return;
+  }
   const base = (t.recurrence ? t.nextDue : t.deadline) || todayStr();
   let newDate;
   if (type==='1d') {
-    const d=new Date(base+'T12:00:00'); d.setDate(d.getDate()+1);
-    newDate=d.toISOString().slice(0,10);
+    newDate=shiftDate(base, 1);
   } else if (type==='1w') {
-    const d=new Date(base+'T12:00:00'); d.setDate(d.getDate()+7);
-    newDate=d.toISOString().slice(0,10);
+    newDate=shiftDate(base, 7);
   } else if (type==='recur' && t.recurrence) {
     newDate=calcNextDue(t.recurrence, base);
   }
@@ -1692,7 +1730,7 @@ function metaRow(t) {
   const dueDate=t.recurrence?t.nextDue:t.deadline;
   const d=daysUntil(dueDate);
   const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':fmtDateShort(dueDate)):'';
-  const chunkProg=(t.chunks&&t.time!=='low')?`<span class="progress-badge">${t.chunks.filter(c=>c.completedAt).length}/${t.chunks.length} steps</span>`:'';
+  const chunkProg=(t.chunks&&t.chunks.length)?`<span class="progress-badge">${t.chunks.filter(c=>c.completedAt).length}/${t.chunks.length} steps</span>`:'';
   const rlab=recurLabel(t.recurrence);
   return `<div class="task-meta">
     <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
@@ -1705,7 +1743,7 @@ function metaRow(t) {
 }
 
 function chunkListHtml(t, inPlate=false) {
-  if (!t.chunks||!t.chunks.length||t.time==='low') return '';
+  if (!t.chunks||!t.chunks.length) return '';
   const expanded = !inPlate || expandedChunks.has(t.id);
   const incomplete = t.chunks.filter(c=>!c.completedAt);
   // Calculate collapsed view regardless of expanded state (needed for "show less" button)
@@ -1755,7 +1793,7 @@ function chunkListHtml(t, inPlate=false) {
 
 function viewBrief() {
   const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)) && !plate.ids.includes(t.id))
-                   .sort((a,b)=>(daysUntil(a.recurrence?a.nextDue:a.deadline)||0)-(daysUntil(b.recurrence?b.nextDue:b.deadline)||0));
+                   .sort((a,b)=>(urgencyDays(a)||0)-(urgencyDays(b)||0));
   const todayPl = plateTasks();
   const sug     = getSuggestions();
   const ctxSet  = ctx.time && ctx.energy;
@@ -1818,8 +1856,7 @@ function viewBrief() {
     h+=`<div class="sec-row" style="margin-top:20px"><div class="sec-hd" style="color:var(--fire)">🔥 Needs attention</div></div>
         <div class="task-grid" style="align-items:start">`;
     urgent.forEach(t=>{
-      const dueDate=t.recurrence?t.nextDue:t.deadline;
-      const d=daysUntil(dueDate);
+      const d=urgencyDays(t); // includes pending step dates
       const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:'today'):'';
       const c=getcat(t.category);
       const onPlate=plate.ids.includes(t.id);
@@ -2097,7 +2134,7 @@ function viewAdd() {
       </div>
     </div>
 
-    ${bigTask ? chunksSection : ''}
+    ${chunksSection}
 
     <div class="form-group">
       <div class="toggle-row-sm" style="margin-bottom:${AF.recurring?'10px':'0'}">
@@ -2381,16 +2418,11 @@ function doSaveEdit(id, btn) {
     }
     t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
     t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
-    if(t.time==='low'){
-      t.chunks=null;
-    } else {
+    {
       syncEditChunkTitles();
       const saved=editChunks.filter(c=>(c.title||'').trim());
       t.chunks=saved.length?saved.map(c=>({id:c.id||newId(),title:(c.title||'').trim(),completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})):null;
-      if(!t.recurrence && t.chunks){
-        const stepDates=t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
-        if(stepDates.length && !dateVal) t.deadline=stepDates[stepDates.length-1];
-      }
+      // deadline follows the last step's due date — enforced centrally in save()
     }
     save();
   } catch(e){ console.error('doSaveEdit error',e); }
@@ -2530,7 +2562,7 @@ function openEditSheet(id) {
       <div class="edit-pills">${timePills}</div>
       <label class="edit-label">Effort</label>
       <div class="edit-pills">${effortPills}</div>
-      <div id="edit-steps-section" style="${t.time==='low'?'display:none':''}">
+      <div id="edit-steps-section">
         <label class="edit-label" style="margin-top:4px">Steps <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
         <div id="edit-chunks-list"></div>
         <button id="edit-add-chunk" type="button" style="background:none;border:none;color:var(--accent);font-size:13px;
@@ -2594,10 +2626,7 @@ function openEditSheet(id) {
     b.addEventListener('click',()=>{
       el.querySelectorAll(`[data-et="${b.dataset.et}"]`).forEach(x=>x.classList.remove('sel'));
       b.classList.add('sel');
-      if(b.dataset.et==='time') {
-        const sec=document.getElementById('edit-steps-section');
-        if(sec) sec.style.display=b.dataset.v==='low'?'none':'';
-      }
+      // (steps section stays visible for all time settings)
     });
   });
   el.addEventListener('click',e=>{if(e.target===el && Date.now()-_editOpenedAt > 500)closeEditModal();});
@@ -3163,16 +3192,11 @@ document.addEventListener('click', e=>{
       }
       t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
       t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
-      if(t.time==='low') {
-        t.chunks=null;
-      } else {
+      {
         syncEditChunkTitles();
         const saved=editChunks.filter(c=>c.title.trim());
         t.chunks=saved.length?saved.map(c=>({id:c.id||newId(),title:c.title.trim(),completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})):null;
-        if(!t.recurrence && t.chunks) {
-          const stepDates=t.chunks.map(c=>c.dueDate).filter(Boolean).sort();
-          if(stepDates.length && !dateVal2) t.deadline=stepDates[stepDates.length-1];
-        }
+        // deadline follows the last step's due date — enforced centrally in save()
       }
       save(); closeEditModal(); showToast('Saved ✓'); rv(); break;
     }
