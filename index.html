@@ -436,6 +436,30 @@
     .empty-ico { font-size:42px; margin-bottom:10px; }
     .empty-txt { font-size:14px; line-height:1.5; }
 
+    /* Week strip — rolling 7-day planner */
+    .week-strip { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:16px; }
+    .week-day   { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+                  padding:3px; min-height:52px; min-width:0; }
+    .week-day.today { border-color:var(--accent); background:var(--accent-light); }
+    .week-day-hd { font-size:9px; font-weight:700; text-align:center; color:var(--text-2);
+                   text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px; white-space:nowrap; }
+    .week-day.today .week-day-hd { color:var(--accent); }
+    .week-chip  { display:flex; align-items:center; border-radius:4px; padding:2px 2px 2px 4px;
+                  margin-bottom:2px; min-width:0; }
+    .week-chip-txt { font-size:9px; font-weight:600; background:none; border:none; padding:0;
+                     cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                     flex:1; min-width:0; text-align:left; line-height:1.5;
+                     -webkit-tap-highlight-color:transparent; }
+    .week-chip-x { background:none; border:none; color:rgba(255,255,255,.75); font-size:10px;
+                   cursor:pointer; padding:0 2px; flex-shrink:0; line-height:1;
+                   -webkit-tap-highlight-color:transparent; }
+
+    /* Mobile: single-column cards */
+    @media (max-width: 640px) {
+      .task-grid { grid-template-columns:1fr; }
+      .grid-2col { grid-template-columns:1fr; }
+    }
+
     /* Toast */
     #toast { position:fixed; bottom:calc(var(--nav-h)+14px); left:50%; transform:translateX(-50%);
              background:#2A2A2A; color:white; padding:9px 18px; border-radius:20px;
@@ -610,9 +634,13 @@ function _applyState(st) {
   projects = st.projects || [];
   settings = st.settings || {};
   const today = todayStr();
-  plate = (st.plate && st.plate.date === today) ? st.plate : {date:today, ids:[]};
+  plate = st.plate || {date:today, days:{}};
   ctx   = (st.ctx   && st.ctx.date   === today) ? st.ctx   : {date:today, time:null, energy:null};
-  plate.ids = plate.ids.filter(id => tasks.some(t => t.id === id));
+  _rolloverPlate(); // migrate/bump forward, then drop ids for tasks that no longer exist
+  Object.keys(plate.days).forEach(ds => {
+    plate.days[ds] = plate.days[ds].filter(id => tasks.some(t => t.id === id));
+    if (!plate.days[ds].length) delete plate.days[ds];
+  });
   _meta.del = st.del||{}; _meta.settingsU = st.settingsU||0; _meta.plateU = st.plateU||0; _meta.ctxU = st.ctxU||0;
   _deriveDeadlines(); // deterministic, keeps deadlines consistent after merges
   _persistLocal(); _saveMeta(); _initShadow();
@@ -723,7 +751,7 @@ function signOutGoogle() {
 let tasks    = [];   // {id,title,category,time,effort,deadline,leadTime,recurrence,nextDue,chunks,createdAt,completedAt,projectId?,phaseId?}
 let recurLog = [];   // {id,taskId,title,completedAt} — history of recurring task completions
 let settings = {};
-let plate    = {date:'',ids:[]};
+let plate    = {date:'',days:{}}; // rolling 7-day planner: days = {dateStr:[taskIds]}
 let ctx      = {date:'',time:null,energy:null};
 let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
 const expandedChunks = new Set(); // task IDs with chunk list expanded in plate view
@@ -1469,14 +1497,14 @@ function load() {
     ctx      = JSON.parse(localStorage.getItem('tm_ctx')    ||'{"date":"","time":null,"energy":null}');
     projects = JSON.parse(localStorage.getItem('tm_projects')||'[]');
     const today = todayStr();
-    if (plate.date!==today) plate={date:today,ids:[]};
+    _rolloverPlate(); // migrate legacy shape + bump unfinished days forward
     if (ctx.date  !==today) ctx  ={date:today,time:null,energy:null};
     // NOTE: seeding disabled — the cloud (Firestore) is now the source of truth.
     // A fresh browser starts empty and fills in on Google sign-in. Re-enabling
     // seeds would create duplicates, since the merge sync unions items by id.
   } catch(e) {
     tasks=[];recurLog=[];settings={};
-    plate={date:todayStr(),ids:[]};ctx={date:todayStr(),time:null,energy:null};
+    plate={date:todayStr(),days:{}};ctx={date:todayStr(),time:null,energy:null};
   }
   _loadMeta();
   _deriveDeadlines(); // deterministic on every device — safe before shadow init
@@ -1508,7 +1536,7 @@ function doCompleteRecur(id, nextDue) {
   t.nextDue=nextDue;
   delete t.snoozedFrom; // clear snooze anchor now that it's been completed
   if(t.chunks) t.chunks.forEach(c=>c.completedAt=null);
-  plate.ids=plate.ids.filter(x=>x!==id);
+  plateDropId(id);
   save(); closeCompleteRecurModal();
   showToast(`Logged ✓ — next: ${fmtNextDue(nextDue)}`);
   rv();
@@ -1572,7 +1600,7 @@ function completeTask(id) {
     openCompleteRecurSheet(id);
   } else {
     t.completedAt=localISOStr();
-    plate.ids=plate.ids.filter(x=>x!==id);
+    plateDropId(id);
     save(); showToast('Done ✓'); rv();
   }
 }
@@ -1583,7 +1611,7 @@ function skipRecurring(id) {
   t.nextDue=next;
   delete t.snoozedFrom; // skip is intentional — clear any snooze anchor
   if(t.chunks) t.chunks.forEach(c=>c.completedAt=null);
-  plate.ids=plate.ids.filter(x=>x!==id);
+  plateDropId(id);
   save(); showToast(`Skipped — next: ${fmtNextDue(next)}`); rv();
 }
 
@@ -1598,7 +1626,7 @@ function snoozeTask(id, type) {
   if (!t.recurrence && t.chunks && t.chunks.some(c=>!c.completedAt&&c.dueDate) && (type==='1d'||type==='1w')) {
     const days = type==='1d' ? 1 : 7;
     t.chunks.forEach(c => { if (!c.completedAt && c.dueDate) c.dueDate = shiftDate(c.dueDate, days); });
-    plate.ids=plate.ids.filter(x=>x!==id);
+    plateDropId(id);
     save();
     showToast(`Steps snoozed ${type==='1d'?'+1 day':'+1 week'} — due ${fmtNextDue(t.deadline)}`); rv();
     return;
@@ -1619,7 +1647,7 @@ function snoozeTask(id, type) {
     t.snoozedFrom = base;
   }
   if (t.recurrence) t.nextDue=newDate; else t.deadline=newDate;
-  plate.ids=plate.ids.filter(x=>x!==id);
+  plateDropId(id);
   save(); showToast(`Snoozed to ${fmtNextDue(newDate)}`); rv();
 }
 
@@ -1637,10 +1665,50 @@ function completeChunk(taskId, chunkId) {
   else { save(); rv(); }
 }
 
-function addToPlate(id)     { if(!plate.ids.includes(id)){plate.ids.push(id);save();showToast('Added to today');} rv(); }
-function removeFromPlate(id){ plate.ids=plate.ids.filter(x=>x!==id);save();rv(); }
+// ── Rolling 7-day planner ────────────────────────────────────
+// plate = {date:'YYYY-MM-DD', days:{'YYYY-MM-DD':[taskIds]}}
+// Each day rolls over: anything not completed bumps forward to today.
+function _rolloverPlate() {
+  const today = todayStr();
+  if (!plate || typeof plate !== 'object') plate = {date:today, days:{}};
+  if (!plate.days) { // migrate legacy {date, ids} shape
+    plate = {date: plate.date||today, days: (plate.ids && plate.ids.length && plate.date) ? {[plate.date]: plate.ids.slice()} : {}};
+  }
+  delete plate.ids;
+  const days = {}; let carried = [];
+  Object.keys(plate.days).sort().forEach(ds => {
+    const ids = plate.days[ds]||[];
+    if (ds < today) carried = carried.concat(ids);       // unfinished → bump to today
+    else if (ids.length) days[ds] = ids;
+  });
+  if (carried.length) days[today] = [...new Set([...carried, ...(days[today]||[])])];
+  plate.date = today;
+  plate.days = days;
+}
+const plateIdsOn = ds => (plate.days && plate.days[ds]) || [];
+const plateHas   = id => !!plate.days && Object.values(plate.days).some(l => l.includes(id));
+function plateDropId(id) { // remove a task from every day
+  if (!plate.days) return;
+  Object.keys(plate.days).forEach(ds => {
+    plate.days[ds] = plate.days[ds].filter(x => x !== id);
+    if (!plate.days[ds].length) delete plate.days[ds];
+  });
+}
+function plateAdd(id, ds) {
+  _rolloverPlate();
+  plateDropId(id); // a task lives on at most one day
+  const day = ds || todayStr();
+  (plate.days[day] || (plate.days[day] = [])).push(id);
+}
+function addToPlate(id, ds) {
+  const day = ds || todayStr();
+  plateAdd(id, day); save();
+  showToast(day===todayStr() ? 'Added to today' : `Planned for ${fmtDateShort(day)}`);
+  rv();
+}
+function removeFromPlate(id){ plateDropId(id);save();rv(); }
 const activeTasks  = () => tasks.filter(t=>!t.completedAt);
-const plateTasks   = () => plate.ids.map(id=>tasks.find(t=>t.id===id)).filter(Boolean).filter(t=>!t.completedAt);
+const plateTasks   = () => plateIdsOn(todayStr()).map(id=>tasks.find(t=>t.id===id)).filter(Boolean).filter(t=>!t.completedAt);
 
 function scoreTask(t) {
   const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
@@ -1697,7 +1765,7 @@ function scoreTask(t) {
 function getSuggestions() {
   const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
   if(!tOpt||!eOpt) return [];
-  const plateSet=new Set(plate.ids);
+  const plateSet=new Set(plate.days?Object.values(plate.days).flat():[]);
   const fireSet=new Set(activeTasks().filter(t=>briefStatus(t)).map(t=>t.id));
   const cands=activeTasks().filter(t=>!plateSet.has(t.id)&&!fireSet.has(t.id));
 
@@ -1792,7 +1860,8 @@ function chunkListHtml(t, inPlate=false) {
 // ═══════════════════════════════════════════════════════════
 
 function viewBrief() {
-  const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)) && !plate.ids.includes(t.id))
+  _rolloverPlate(); // keep the strip fresh even if the tab crossed midnight
+  const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)) && !plateHas(t.id))
                    .sort((a,b)=>(urgencyDays(a)||0)-(urgencyDays(b)||0));
   const todayPl = plateTasks();
   const sug     = getSuggestions();
@@ -1800,6 +1869,31 @@ function viewBrief() {
 
   let h=`<div class="greeting">${greet()}, Jules</div>
           <div class="date-str">${fmtDateFull(todayStr())}</div>`;
+
+  // ── Week strip: rolling 7-day planner ─────────────────────
+  {
+    const weekDays=[...Array(7)].map((_,i)=>{
+      const d=new Date(todayStr()+'T12:00:00'); d.setDate(d.getDate()+i);
+      return d.toISOString().slice(0,10);
+    });
+    h+=`<div class="week-strip">`;
+    weekDays.forEach((ds,i)=>{
+      const dd=new Date(ds+'T12:00:00');
+      const lbl=i===0?'Today':dd.toLocaleDateString('en-US',{weekday:'short'});
+      const dayTasks=plateIdsOn(ds).map(tid=>tasks.find(t=>t.id===tid)).filter(Boolean).filter(t=>!t.completedAt);
+      h+=`<div class="week-day${i===0?' today':''}">
+        <div class="week-day-hd">${lbl} ${dd.getDate()}</div>
+        ${dayTasks.map(t=>{
+          const c=getcat(t.category);
+          return `<div class="week-chip" style="background:${c.color}">
+            <button class="week-chip-txt" style="color:${c.textColor||'white'}" data-a="open-edit" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>
+            <button class="week-chip-x" data-a="rm-plate" data-id="${t.id}" title="Remove from plan">×</button>
+          </div>`;
+        }).join('')}
+      </div>`;
+    });
+    h+=`</div>`;
+  }
 
 
 
@@ -1859,7 +1953,7 @@ function viewBrief() {
       const d=urgencyDays(t); // includes pending step dates
       const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:'today'):'';
       const c=getcat(t.category);
-      const onPlate=plate.ids.includes(t.id);
+      const onPlate=plateHas(t.id);
       h+=`<div class="fire-card" style="margin-bottom:0">
         <div class="fire-top">
           <div class="fire-title">${titleLink(t)}</div>
@@ -1881,6 +1975,13 @@ function viewBrief() {
           <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
           <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
           ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
+        </div>
+        <div class="snooze-row" style="margin-top:2px">
+          ${[...Array(6)].map((_,pi)=>{
+            const pd=new Date(todayStr()+'T12:00:00'); pd.setDate(pd.getDate()+pi+1);
+            const pds=pd.toISOString().slice(0,10);
+            return `<button class="snooze-btn" data-a="plan-day" data-id="${t.id}" data-day="${pds}" title="Plan for ${fmtDateFull(pds)}">${pd.toLocaleDateString('en-US',{weekday:'short'}).slice(0,2)}</button>`;
+          }).join('')}
         </div>
       </div>`;
     });
@@ -2250,7 +2351,7 @@ function viewBacklog() {
 
 function taskRow(t) {
   const c=getcat(t.category);
-  const onPlate=plate.ids.includes(t.id);
+  const onPlate=plateHas(t.id);
   const sc=scoreTask(t);
   const scoreBadge=sc!==null
     ? `<span class="score-badge ${sc>0?'score-pos':'score-neg'}" title="Suggestion score">${sc}</span>`
@@ -2976,7 +3077,8 @@ document.addEventListener('click', e=>{
 
     case 'add-plate':  addToPlate(id); break;
     case 'rm-plate':   removeFromPlate(id); break;
-    case 'clear-plate': plate.ids=[];save();rv(); break;
+    case 'clear-plate': if(plate.days) delete plate.days[todayStr()]; save();rv(); break;
+    case 'plan-day':   addToPlate(id, btn.dataset.day); break;
 
     case 'set-time':
       ctx.time=btn.dataset.v; ctx.date=todayStr(); save();
@@ -3203,7 +3305,7 @@ document.addEventListener('click', e=>{
     case 'delete-task': {
       if(!confirm('Delete this task?')) break;
       tasks=tasks.filter(x=>x.id!==id);
-      plate.ids=plate.ids.filter(x=>x!==id);
+      plateDropId(id);
       save(); closeEditModal(); rv(); break;
     }
   }
