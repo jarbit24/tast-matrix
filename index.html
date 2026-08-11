@@ -445,11 +445,16 @@
                    text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px; white-space:nowrap; }
     .week-day.today .week-day-hd { color:var(--accent); }
     .week-chip  { display:flex; align-items:center; border-radius:4px; padding:2px 2px 2px 4px;
-                  margin-bottom:2px; min-width:0; }
+                  margin-bottom:2px; min-width:0; cursor:grab;
+                  -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
     .week-chip-txt { font-size:9px; font-weight:600; background:none; border:none; padding:0;
                      cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                      flex:1; min-width:0; text-align:left; line-height:1.5;
+                     -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
                      -webkit-tap-highlight-color:transparent; }
+    .week-day.drop-hover { border-color:var(--accent); background:var(--accent-light);
+                           box-shadow:0 0 0 2px var(--accent); }
+    .week-chip.drag-ghost { box-shadow:0 4px 14px rgba(0,0,0,.3); transform:scale(1.05); }
     .week-chip-x { background:none; border:none; color:rgba(255,255,255,.75); font-size:10px;
                    cursor:pointer; padding:0 2px; flex-shrink:0; line-height:1;
                    -webkit-tap-highlight-color:transparent; }
@@ -1881,11 +1886,11 @@ function viewBrief() {
       const dd=new Date(ds+'T12:00:00');
       const lbl=i===0?'Today':dd.toLocaleDateString('en-US',{weekday:'short'});
       const dayTasks=plateIdsOn(ds).map(tid=>tasks.find(t=>t.id===tid)).filter(Boolean).filter(t=>!t.completedAt);
-      h+=`<div class="week-day${i===0?' today':''}">
+      h+=`<div class="week-day${i===0?' today':''}" data-day="${ds}">
         <div class="week-day-hd">${lbl} ${dd.getDate()}</div>
         ${dayTasks.map(t=>{
           const c=getcat(t.category);
-          return `<div class="week-chip" style="background:${c.color}">
+          return `<div class="week-chip" data-drag-id="${t.id}" style="background:${c.color}">
             <button class="week-chip-txt" style="color:${c.textColor||'white'}" data-a="open-edit" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>
             <button class="week-chip-x" data-a="rm-plate" data-id="${t.id}" title="Remove from plan">×</button>
           </div>`;
@@ -3316,11 +3321,99 @@ document.getElementById('nav').addEventListener('click', e=>{
 });
 
 // ═══════════════════════════════════════════════════════════
+//  WEEK STRIP DRAG & DROP
+//  Mouse: press a chip and drag. Touch: hold ~0.3s, then drag.
+// ═══════════════════════════════════════════════════════════
+
+function _dropChip(id, ds) {
+  if (!id || !ds) return;
+  if (plateIdsOn(ds).includes(id)) return; // already there
+  plateAdd(id, ds);
+  save(); rv();
+  showToast(ds===todayStr() ? 'Moved to today' : `Moved to ${fmtDateShort(ds)}`);
+}
+
+function initWeekDrag() {
+  const app=document.getElementById('app');
+  let dragId=null, ghost=null, active=false, sx=0, sy=0, holdTimer=null, suppressClick=false;
+
+  const clearHover=exc=>document.querySelectorAll('.week-day.drop-hover').forEach(d=>{if(d!==exc)d.classList.remove('drop-hover');});
+  const moveGhost=(x,y)=>{ if(ghost){ ghost.style.left=(x-30)+'px'; ghost.style.top=(y-12)+'px'; } };
+  const mkGhost=(chip,x,y)=>{
+    ghost=chip.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.cssText+=`;position:fixed;z-index:999;pointer-events:none;opacity:.92;width:${chip.offsetWidth}px;background:${getComputedStyle(chip).backgroundColor}`;
+    document.body.appendChild(ghost); moveGhost(x,y);
+  };
+  const dayAt=(x,y)=>{ const el=document.elementFromPoint(x,y); return el?el.closest('.week-day[data-day]'):null; };
+  const endDrag=(x,y,doDrop)=>{
+    if(doDrop && active && dragId){ const day=dayAt(x,y); if(day) _dropChip(dragId, day.dataset.day); }
+    if(ghost){ghost.remove();ghost=null;}
+    clearHover(null); active=false; dragId=null;
+    clearTimeout(holdTimer); holdTimer=null;
+  };
+
+  // ── mouse ──
+  app.addEventListener('mousedown', e=>{
+    if(e.button!==0) return;
+    const chip=e.target.closest('[data-drag-id]');
+    if(!chip) return;
+    sx=e.clientX; sy=e.clientY; dragId=chip.dataset.dragId;
+    const onMove=ev=>{
+      if(!active && Math.hypot(ev.clientX-sx,ev.clientY-sy)>6){ active=true; suppressClick=true; mkGhost(chip,ev.clientX,ev.clientY); }
+      if(active){ ev.preventDefault(); moveGhost(ev.clientX,ev.clientY);
+        const d=dayAt(ev.clientX,ev.clientY); clearHover(d); if(d)d.classList.add('drop-hover'); }
+    };
+    const onUp=ev=>{
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+      endDrag(ev.clientX,ev.clientY,true);
+      setTimeout(()=>{suppressClick=false;},0);
+    };
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  });
+  // swallow the click that follows a completed mouse drag (would open the edit sheet)
+  app.addEventListener('click', e=>{
+    if(suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
+  }, true);
+
+  // ── touch (long-press to lift, then drag) ──
+  app.addEventListener('touchstart', e=>{
+    const chip=e.target.closest('[data-drag-id]');
+    if(!chip) return;
+    const t=e.touches[0]; sx=t.clientX; sy=t.clientY; dragId=chip.dataset.dragId;
+    holdTimer=setTimeout(()=>{ active=true; mkGhost(chip,sx,sy); if(navigator.vibrate)navigator.vibrate(10); },280);
+  },{passive:true});
+  app.addEventListener('touchmove', e=>{
+    if(holdTimer && !active){ // finger moved before hold completed → it's a scroll
+      const t=e.touches[0];
+      if(Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10){ clearTimeout(holdTimer); holdTimer=null; dragId=null; }
+      return;
+    }
+    if(!active) return;
+    if(e.cancelable) e.preventDefault(); // stop the page from scrolling while dragging
+    const t=e.touches[0]; moveGhost(t.clientX,t.clientY);
+    const d=dayAt(t.clientX,t.clientY); clearHover(d); if(d)d.classList.add('drop-hover');
+  },{passive:false});
+  app.addEventListener('touchend', e=>{
+    clearTimeout(holdTimer); holdTimer=null;
+    if(active){
+      const t=e.changedTouches[0];
+      if(e.cancelable) e.preventDefault(); // suppress the synthetic click
+      endDrag(t.clientX,t.clientY,true);
+    } else { dragId=null; }
+  });
+  app.addEventListener('touchcancel', ()=>endDrag(0,0,false));
+}
+
+// ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
 
 load();
 initSync();
+initWeekDrag();
 
 // ── One-time seed: GGVI project task ────────────────────────
 // DISABLED: already delivered to the cloud; re-running on a fresh browser
