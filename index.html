@@ -436,6 +436,52 @@
     .empty-ico { font-size:42px; margin-bottom:10px; }
     .empty-txt { font-size:14px; line-height:1.5; }
 
+    /* Week board — rolling 7-day planner, today expanded */
+    .week-board { display:grid; grid-template-columns:2fr repeat(6,1fr); gap:5px;
+                  margin-bottom:18px; align-items:start; }
+    .week-board .week-day { min-height:130px; border-radius:10px; }
+    .week-board .wb-today { background:var(--accent-light); border-color:var(--accent); padding:6px; }
+    .wb-hd { font-size:10px; font-weight:700; color:var(--text-2); text-transform:uppercase;
+             letter-spacing:.04em; text-align:center; margin-bottom:5px; white-space:nowrap; }
+    .wb-today .wb-hd { color:var(--accent); text-align:left; padding-left:2px; }
+    .wb-item { background:var(--surface); border-radius:7px; padding:5px 6px; margin-bottom:4px;
+               box-shadow:var(--shadow); cursor:grab; min-width:0;
+               -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+    .wb-row { display:flex; align-items:center; gap:6px; min-width:0; }
+    .wb-title { flex:1; min-width:0; font-size:12px; font-weight:500; color:var(--text);
+                background:none; border:none; padding:0; text-align:left; cursor:pointer;
+                overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                -webkit-tap-highlight-color:transparent; }
+    .wb-x { background:none; border:none; color:var(--text-3); font-size:12px; cursor:pointer;
+            padding:0 2px; flex-shrink:0; line-height:1; -webkit-tap-highlight-color:transparent; }
+    .wb-empty { font-size:10px; color:var(--text-3); text-align:center; padding:20px 4px; line-height:1.6; }
+    .wb-chip { display:flex; align-items:center; gap:4px; background:var(--surface-2);
+               border-radius:5px; padding:3px 4px; margin-bottom:3px; min-width:0; cursor:grab;
+               -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+    .wb-chip-txt { flex:1; min-width:0; font-size:10px; color:var(--text); background:none;
+                   border:none; padding:0; text-align:left; cursor:pointer; overflow:hidden;
+                   text-overflow:ellipsis; white-space:nowrap;
+                   -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+                   -webkit-tap-highlight-color:transparent; }
+    .wb-item .chunk-list { border-top:none; margin-top:2px; padding-top:0; padding-left:24px; }
+    .wb-item .chunk-item { padding:2px 0; gap:5px; }
+    .wb-item .chunk-ck { width:14px; height:14px; font-size:9px; }
+    .wb-item .chunk-title { font-size:11px; color:var(--text-2); }
+    .fire-card.fire-critical { border:2px solid var(--fire); }
+    .flex-row, .start-row { display:flex; align-items:center; gap:8px; background:var(--surface);
+                            border-radius:var(--r-sm); padding:8px 10px; margin-top:6px;
+                            box-shadow:var(--shadow); min-width:0; }
+    .flex-row .wb-title, .start-row .wb-title { font-size:13px; }
+    .start-row { border-left:3px solid var(--upcoming); cursor:grab;
+                 -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+    .start-meta { font-size:10px; color:var(--upcoming); white-space:nowrap; flex-shrink:0; }
+    @media (max-width: 640px) {
+      .week-board { grid-template-columns:repeat(3,1fr); }
+      .week-board .wb-today { grid-column:1/-1; min-height:0; }
+      .week-board .week-day { min-height:80px; }
+      .start-meta { white-space:normal; }
+    }
+
     /* Week strip — rolling 7-day planner */
     .week-strip { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:16px; }
     .week-day   { background:var(--surface); border:1px solid var(--border); border-radius:8px;
@@ -685,6 +731,13 @@ function syncNow() {
 }
 
 function initSync() {
+  if (typeof firebase === 'undefined') {
+    // Firebase SDK failed to load (offline, blocked CDN, sandboxed preview) —
+    // run local-only so the app still works; sync resumes on next full load.
+    const bar = document.getElementById('sync-bar');
+    if (bar) bar.innerHTML = `<span class="sync-ok">☁ offline — changes saved on this device</span>`;
+    return;
+  }
   if (!FB_CONFIG.apiKey || FB_CONFIG.apiKey === 'REPLACE_ME') return;
   firebase.initializeApp(FB_CONFIG);
   const auth = firebase.auth();
@@ -761,6 +814,7 @@ let ctx      = {date:'',time:null,energy:null};
 let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
 const expandedChunks = new Set(); // task IDs with chunk list expanded in plate view
 let curView  = 'brief';
+let _showFlex = false; // flexible-due list expanded?
 let bFilter    = 'all';
 let bProjectFilter = false; // when true, show only tasks that belong to a project
 let bSort      = 'cat'; // 'cat' | 'date' | 'score'
@@ -779,6 +833,7 @@ let AF = {
   chunks:[],showChunks:false,
   projectId:'',phaseId:'',
   description:'',link:'',
+  priority:'normal',leadTime:'',
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1531,6 +1586,12 @@ function addTask(d) {
     nextDue: isRecur ? firstDue : null,
     chunks: d.chunks&&d.chunks.length ? d.chunks : null,
     createdAt:localISOStr(), completedAt:null,
+    ...(d.description?{description:d.description}:{}),
+    ...(d.link?{link:d.link}:{}),
+    ...(d.projectId?{projectId:d.projectId}:{}),
+    ...(d.phaseId?{phaseId:d.phaseId}:{}),
+    ...(d.priority?{priority:d.priority}:{}),
+    ...(d.leadTime>0?{leadTime:d.leadTime}:{}),
   });
   save();
 }
@@ -1875,93 +1936,72 @@ function viewBrief() {
   let h=`<div class="greeting">${greet()}, Jules</div>
           <div class="date-str">${fmtDateFull(todayStr())}</div>`;
 
-  // ── Week strip: rolling 7-day planner ─────────────────────
+  // ── Week board: rolling 7-day planner (today expanded) ────
   {
     const weekDays=[...Array(7)].map((_,i)=>{
       const d=new Date(todayStr()+'T12:00:00'); d.setDate(d.getDate()+i);
       return d.toISOString().slice(0,10);
     });
-    h+=`<div class="week-strip">`;
+    h+=`<div class="week-board">`;
     weekDays.forEach((ds,i)=>{
       const dd=new Date(ds+'T12:00:00');
-      const lbl=i===0?'Today':dd.toLocaleDateString('en-US',{weekday:'short'});
       const dayTasks=plateIdsOn(ds).map(tid=>tasks.find(t=>t.id===tid)).filter(Boolean).filter(t=>!t.completedAt);
-      h+=`<div class="week-day${i===0?' today':''}" data-day="${ds}">
-        <div class="week-day-hd">${lbl} ${dd.getDate()}</div>
-        ${dayTasks.map(t=>{
-          const c=getcat(t.category);
-          return `<div class="week-chip" data-drag-id="${t.id}" style="background:${c.color}">
-            <button class="week-chip-txt" style="color:${c.textColor||'white'}" data-a="open-edit" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>
-            <button class="week-chip-x" data-a="rm-plate" data-id="${t.id}" title="Remove from plan">×</button>
-          </div>`;
-        }).join('')}
-      </div>`;
+      if(i===0){
+        h+=`<div class="week-day wb-today" data-day="${ds}">
+          <div class="wb-hd">Today ${dd.getDate()}${dayTasks.length?`<button class="link-btn" data-a="clear-plate" style="float:right;font-size:10px">clear</button>`:''}</div>
+          ${dayTasks.map(t=>{
+            const c=getcat(t.category);
+            const dl=t.recurrence?t.nextDue:t.deadline;
+            const d=dl?daysUntil(dl):null;
+            const badge=(t.chunks&&t.chunks.length)
+              ?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length}</span>`
+              :(d!==null?`<span class="dl-tag ${dlClass(d)}" style="font-size:9px;flex-shrink:0">${d<0?Math.abs(d)+'d over':d===0?'today':fmtDateShort(dl)}</span>`:'');
+            return `<div class="wb-item" data-drag-id="${t.id}">
+              <div class="wb-row">
+                <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
+                <span class="plate-dot" style="background:${c.color}"></span>
+                <button class="wb-title" data-a="open-edit" data-id="${t.id}">${t.priority==='critical'?'⭐ ':''}${esc(t.title)}</button>
+                ${badge}
+                ${t.recurrence?`<button class="wb-x" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence">↷</button>`:''}
+                <button class="wb-x" data-a="rm-plate" data-id="${t.id}">×</button>
+              </div>
+              ${chunkListHtml(t, true)}
+            </div>`;
+          }).join('')||`<div class="wb-empty">nothing planned yet<br>drag tasks here</div>`}
+        </div>`;
+      } else {
+        const lbl=dd.toLocaleDateString('en-US',{weekday:'short'});
+        h+=`<div class="week-day" data-day="${ds}">
+          <div class="wb-hd">${lbl} ${dd.getDate()}</div>
+          ${dayTasks.map(t=>{
+            const c=getcat(t.category);
+            return `<div class="wb-chip" data-drag-id="${t.id}">
+              <span class="plate-dot" style="background:${c.color};width:7px;height:7px"></span>
+              <button class="wb-chip-txt" data-a="open-edit" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>
+              <button class="wb-x" data-a="rm-plate" data-id="${t.id}" title="Remove from plan">×</button>
+            </div>`;
+          }).join('')}
+        </div>`;
+      }
     });
     h+=`</div>`;
   }
 
-
-
-
-  // Today's Plate — always show 6 category columns (mirrors Suggested layout)
-  {
-    h+=`<div class="sec-row"><div class="sec-hd">Today's Plate</div>
-          ${todayPl.length?`<button class="link-btn" data-a="clear-plate">clear</button>`:''}</div>`;
-    const plateByCat={};
-    todayPl.forEach(t=>{ const raw=t.category||'misc'; const cid=CAT_ALIAS[raw]||raw; (plateByCat[cid]||(plateByCat[cid]=[])).push(t); });
-    const plateCatOrder=[...SUG_CAT_ORDER,...Object.keys(plateByCat).filter(c=>!SUG_CAT_ORDER.includes(c))];
-    h+=`<div class="plate-cat-grid">`;
-    plateCatOrder.forEach(cid=>{
-      const catTasks=plateByCat[cid]||[];
-      const cat=getcat(cid);
-      h+=`<div class="sug-cat-col">
-        <div class="sug-cat-hd" style="background:${cat.color}">
-          <span class="sug-cat-hd-emoji">${cat.emoji}</span>
-          <span class="sug-cat-hd-name" style="color:${cat.textColor||'white'}">${cat.name}</span>
-        </div>`;
-      catTasks.forEach(t=>{
-        const prog=t.chunks?`<span class="progress-badge">${t.chunks.filter(ch=>ch.completedAt).length}/${t.chunks.length}</span>`:'';
-        const plateDueDate=t.recurrence?t.nextDue:t.deadline;
-        const plateDd=plateDueDate?daysUntil(plateDueDate):null;
-        const plateDlTag=plateDd!==null
-          ?`<span class="dl-tag ${dlClass(plateDd)}" style="flex-shrink:0;font-size:10px">📅&nbsp;${plateDd<0?Math.abs(plateDd)+'d overdue':plateDd===0?'today':fmtDateShort(plateDueDate)}</span>`
-          :'';
-        h+=`<div class="plate-cat-item">
-          <div class="plate-cat-row">
-            <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
-            <div style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;overflow:hidden">
-              <button class="plate-cat-ttl" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
-              ${plateDlTag}
-            </div>
-            ${prog}
-            ${t.recurrence?`<button class="plate-rm" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence" style="font-size:11px">↷</button>`:''}
-            <button class="plate-rm" data-a="rm-plate" data-id="${t.id}">✕</button>
-          </div>
-          <div class="snooze-row">
-            <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
-            <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
-            ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
-          </div>
-          ${chunkListHtml(t, true)}
-        </div>`;
-      });
-      h+=`</div>`;
-    });
-    h+=`</div>`;
-  }
-
-  // On fire — overdue & due today (all of them, no cap)
-  if (urgent.length) {
-    h+=`<div class="sec-row" style="margin-top:20px"><div class="sec-hd" style="color:var(--fire)">🔥 Needs attention</div></div>
+  // ── Needs attention: critical pinned first, flexible collapsed ──
+  const critDue=urgent.filter(t=>t.priority==='critical');
+  const normDue=urgent.filter(t=>!t.priority);
+  const flexDue=urgent.filter(t=>t.priority==='flexible');
+  if (critDue.length||normDue.length) {
+    h+=`<div class="sec-row" style="margin-top:18px"><div class="sec-hd" style="color:var(--fire)">🔥 Needs attention</div></div>
         <div class="task-grid" style="align-items:start">`;
-    urgent.forEach(t=>{
+    [...critDue,...normDue].forEach(t=>{
       const d=urgencyDays(t); // includes pending step dates
       const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:'today'):'';
       const c=getcat(t.category);
-      const onPlate=plateHas(t.id);
-      h+=`<div class="fire-card" style="margin-bottom:0">
+      const isCrit=t.priority==='critical';
+      h+=`<div class="fire-card${isCrit?' fire-critical':''}" style="margin-bottom:0">
         <div class="fire-top">
-          <div class="fire-title">${titleLink(t)}</div>
+          <div class="fire-title">${isCrit?'⭐ ':''}${titleLink(t)}</div>
           ${dlTxt?`<span class="days-badge" style="background:var(--fire-light);color:var(--fire)">${dlTxt}</span>`:''}
         </div>
         <div class="task-meta" style="margin-bottom:6px">
@@ -1971,18 +2011,14 @@ function viewBrief() {
         ${chunkListHtml(t, true)}
         <div class="fire-btns">
           <button class="fire-btn fire-btn-done" data-a="complete" data-id="${t.id}">✓ Done</button>
-          ${onPlate
-            ? `<span style="font-size:11px;color:var(--accent);font-weight:700;align-self:center;padding:7px 4px">on plate</span>`
-            : `<button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Plate</button>`}
+          <button class="fire-btn fire-btn-add" data-a="add-plate" data-id="${t.id}">+ Today</button>
           <button class="fire-btn fire-btn-skip" data-a="open-edit" data-id="${t.id}">✎</button>
         </div>
         <div class="snooze-row">
           <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
           <button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
           ${t.recurrence?`<button class="snooze-btn" data-a="snooze" data-id="${t.id}" data-snooze="recur">+1↻</button>`:''}
-        </div>
-        <div class="snooze-row" style="margin-top:2px">
-          ${[...Array(6)].map((_,pi)=>{
+          ${[...Array(4)].map((_,pi)=>{
             const pd=new Date(todayStr()+'T12:00:00'); pd.setDate(pd.getDate()+pi+1);
             const pds=pd.toISOString().slice(0,10);
             return `<button class="snooze-btn" data-a="plan-day" data-id="${t.id}" data-day="${pds}" title="Plan for ${fmtDateFull(pds)}">${pd.toLocaleDateString('en-US',{weekday:'short'}).slice(0,2)}</button>`;
@@ -1991,6 +2027,44 @@ function viewBrief() {
       </div>`;
     });
     h+=`</div>`;
+  }
+  if (flexDue.length) {
+    h+=`<div style="margin-top:10px"><button class="link-btn" data-a="toggle-flex">${_showFlex?'▾ hide':'▸ show'} ${flexDue.length} flexible task${flexDue.length>1?'s':''} due</button></div>`;
+    if (_showFlex) flexDue.forEach(t=>{
+      const c=getcat(t.category);
+      const d=urgencyDays(t);
+      h+=`<div class="flex-row" data-drag-id="${t.id}">
+        <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
+        <span class="plate-dot" style="background:${c.color}"></span>
+        <button class="wb-title" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
+        <span class="dl-tag ${dlClass(d)}" style="font-size:9px;flex-shrink:0">${d<0?Math.abs(d)+'d over':'today'}</span>
+        <button class="snooze-btn" style="flex:0 0 auto;padding:3px 9px" data-a="snooze" data-id="${t.id}" data-snooze="1w">+1w</button>
+      </div>`;
+    });
+  }
+
+  // ── Start now: long-runway tasks whose start window opened ──
+  const startNow=activeTasks().filter(t=>{
+    if (t.recurrence||!t.deadline||!(t.leadTime>0)) return false;
+    if (t.priority==='flexible') return false;
+    if (plateHas(t.id)) return false;
+    if (briefStatus(t)) return false; // already due → fire section
+    if (t.chunks&&t.chunks.some(c=>!c.completedAt&&c.dueDate)) return false; // dated steps pace it
+    const d=daysUntil(t.deadline);
+    return d!==null&&d<=t.leadTime;
+  }).sort((a,b)=>daysUntil(a.deadline)-daysUntil(b.deadline));
+  if (startNow.length) {
+    h+=`<div class="sec-row" style="margin-top:18px"><div class="sec-hd" style="color:var(--upcoming)">▶ Start now</div></div>`;
+    startNow.forEach(t=>{
+      const c=getcat(t.category);
+      const left=daysUntil(t.deadline);
+      h+=`<div class="start-row" data-drag-id="${t.id}">
+        <span class="plate-dot" style="background:${c.color}"></span>
+        <button class="wb-title" data-a="open-edit" data-id="${t.id}">${t.priority==='critical'?'⭐ ':''}${esc(t.title)}</button>
+        <span class="start-meta">due ${fmtDateShort(t.deadline)} · ${left}d left of ${t.leadTime}d runway</span>
+        <button class="upcoming-add" data-a="add-plate" data-id="${t.id}">+</button>
+      </div>`;
+    });
   }
 
   // Context picker
@@ -2082,6 +2156,7 @@ function syncAF() {
   if(g('f-phase'))   AF.phaseId=g('f-phase').value||'';
   if(g('f-desc'))    AF.description=g('f-desc').value||'';
   if(g('f-link'))    AF.link=g('f-link').value||'';
+  if(g('f-lead'))    AF.leadTime=g('f-lead').value||'';
   document.querySelectorAll('.chunk-inp').forEach(inp=>{
     const ch=AF.chunks.find(c=>c.id===inp.dataset.cid);
     if(ch) ch.title=inp.value;
@@ -2240,6 +2315,15 @@ function viewAdd() {
       </div>
     </div>
 
+    <div class="form-group">
+      <label class="form-label">Priority</label>
+      <div class="opt-grid">
+        <button class="opt-btn ${AF.priority==='critical'?'sel':''}" data-a="set-fpriority" data-v="critical">⭐ Critical</button>
+        <button class="opt-btn ${AF.priority==='normal'?'sel':''}" data-a="set-fpriority" data-v="normal">Normal</button>
+        <button class="opt-btn ${AF.priority==='flexible'?'sel':''}" data-a="set-fpriority" data-v="flexible">Flexible</button>
+      </div>
+    </div>
+
     ${chunksSection}
 
     <div class="form-group">
@@ -2253,6 +2337,11 @@ function viewAdd() {
     <div class="form-group">
       <label class="form-label">${AF.recurring?'First due / Start date':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(optional)</span></label>
       <input id="f-deadline" class="form-input" type="date" min="${todayStr()}" value="${AF.deadline}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Runway <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(days of work needed before the deadline — optional)</span></label>
+      <input id="f-lead" class="form-input" type="number" min="0" placeholder="e.g. 21" value="${esc(AF.leadTime||'')}">
     </div>
 
     <div class="form-group">
@@ -2524,6 +2613,10 @@ function doSaveEdit(id, btn) {
     }
     t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
     t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
+    const priV=document.querySelector('#edit-modal [data-et="priority"].sel')?.dataset.v;
+    if(priV){ if(priV==='normal') delete t.priority; else t.priority=priV; }
+    const leadV=parseInt(document.getElementById('et-lead')?.value);
+    if(leadV>0) t.leadTime=leadV; else delete t.leadTime;
     {
       syncEditChunkTitles();
       const saved=editChunks.filter(c=>(c.title||'').trim());
@@ -2668,6 +2761,14 @@ function openEditSheet(id) {
       <div class="edit-pills">${timePills}</div>
       <label class="edit-label">Effort</label>
       <div class="edit-pills">${effortPills}</div>
+      <label class="edit-label">Priority</label>
+      <div class="edit-pills">
+        <button class="edit-pill${t.priority==='critical'?' sel':''}" data-et="priority" data-v="critical">⭐ Critical</button>
+        <button class="edit-pill${!t.priority?' sel':''}" data-et="priority" data-v="normal">Normal</button>
+        <button class="edit-pill${t.priority==='flexible'?' sel':''}" data-et="priority" data-v="flexible">Flexible</button>
+      </div>
+      <label class="edit-label">Runway <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">days of work needed before the deadline — feeds "Start now"</span></label>
+      <input class="edit-field" id="et-lead" type="number" min="0" placeholder="e.g. 21" value="${t.leadTime||''}">
       <div id="edit-steps-section">
         <label class="edit-label" style="margin-top:4px">Steps <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
         <div id="edit-chunks-list"></div>
@@ -3084,6 +3185,11 @@ document.addEventListener('click', e=>{
     case 'rm-plate':   removeFromPlate(id); break;
     case 'clear-plate': if(plate.days) delete plate.days[todayStr()]; save();rv(); break;
     case 'plan-day':   addToPlate(id, btn.dataset.day); break;
+    case 'toggle-flex': _showFlex=!_showFlex; rv(); break;
+    case 'set-fpriority':
+      syncAF(); AF.priority=btn.dataset.v;
+      document.querySelectorAll('[data-a="set-fpriority"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===AF.priority));
+      break;
 
     case 'set-time':
       ctx.time=btn.dataset.v; ctx.date=todayStr(); save();
@@ -3157,17 +3263,21 @@ document.addEventListener('click', e=>{
       const phId=AF.phaseId||null;
       const desc=(AF.description||'').trim()||undefined;
       const lnk=(AF.link||'').trim()||undefined;
+      const leadN=parseInt(AF.leadTime);
       addTask({title,category:cat,time:AF.time,effort:AF.effort,
                deadline,
                recurrence,chunks:chunks.length?chunks:null,
                ...(projId?{projectId:projId}:{}),
                ...(projId&&phId?{phaseId:phId}:{}),
                ...(desc?{description:desc}:{}),
-               ...(lnk?{link:lnk}:{})});
+               ...(lnk?{link:lnk}:{}),
+               ...(AF.priority&&AF.priority!=='normal'?{priority:AF.priority}:{}),
+               ...(leadN>0?{leadTime:leadN}:{})});
       AF={title:'',category:null,time:'medium',effort:'medium',
           deadline:'',recurring:false,recurType:'interval',
           recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
-          chunks:[],showChunks:false,projectId:'',phaseId:'',description:'',link:''};
+          chunks:[],showChunks:false,projectId:'',phaseId:'',description:'',link:'',
+          priority:'normal',leadTime:''};
       setTimeout(()=>navigate('backlog'), 350); break;
     }
 
@@ -3299,6 +3409,10 @@ document.addEventListener('click', e=>{
       }
       t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
       t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
+      const priV2=document.querySelector('#edit-modal [data-et="priority"].sel')?.dataset.v;
+      if(priV2){ if(priV2==='normal') delete t.priority; else t.priority=priV2; }
+      const leadV2=parseInt(document.getElementById('et-lead')?.value);
+      if(leadV2>0) t.leadTime=leadV2; else delete t.leadTime;
       {
         syncEditChunkTitles();
         const saved=editChunks.filter(c=>c.title.trim());
