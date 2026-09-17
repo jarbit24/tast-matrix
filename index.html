@@ -3070,6 +3070,7 @@ const VIEWS={brief:viewBrief,add:viewAdd,backlog:viewBacklog,projects:viewProjec
 function navigate(v) {
   if(v!=='backlog') bSearch='';
   if(v!=='projects') projDetailId=null;
+  if(v==='add') AF.recurring=false; // Add tab always opens as one-time (draft title etc. kept)
   curView=v;
   try{localStorage.setItem('tm_curView',v);}catch(e){}
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===v));
@@ -3527,6 +3528,25 @@ if (!localStorage.getItem('tm_imp_20260918_em')) {
     });
   });
   localStorage.setItem('tm_imp_20260918_em','1');
+  save();
+  rv();
+}
+
+// ── One-time fixup: 9/17 Julie items → Blue Engine project, one-time only ──
+if (!localStorage.getItem('tm_fix_20260918_blueng')) {
+  let beProj = projects.find(p=>/blue\s*engine/i.test(p.title||''));
+  if (!beProj) {
+    beProj = {id:'imp_blueng_proj', title:'Blue Engine', color:'#38BDB0', createdAt:localISOStr(), phases:[]};
+    projects.push(beProj);
+  }
+  ['imp0917a','imp0917b','imp0917c','imp0917d','imp0917e'].forEach(id=>{
+    const t=tasks.find(x=>x.id===id);
+    if (!t) return; // user deleted it — leave deleted
+    t.projectId=beProj.id;
+    delete t.phaseId;
+    t.recurrence=null; t.nextDue=null; // explicitly one-time
+  });
+  localStorage.setItem('tm_fix_20260918_blueng','1');
   save();
   rv();
 }
