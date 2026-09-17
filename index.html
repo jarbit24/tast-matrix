@@ -511,6 +511,14 @@
       .grid-2col { grid-template-columns:1fr; }
     }
 
+    /* Date field with leading calendar icon */
+    .date-wrap { position:relative; }
+    .date-wrap input { padding-left:36px; width:100%; }
+    .date-wrap .date-ico { position:absolute; left:10px; top:50%; transform:translateY(-50%);
+                           background:none; border:none; cursor:pointer; padding:2px; line-height:0;
+                           color:var(--text-2); -webkit-tap-highlight-color:transparent; }
+    .date-wrap input::-webkit-calendar-picker-indicator { display:none; }
+
     /* Toast */
     #toast { position:fixed; bottom:calc(var(--nav-h)+14px); left:50%; transform:translateX(-50%);
              background:#2A2A2A; color:white; padding:9px 18px; border-radius:20px;
@@ -815,6 +823,7 @@ let projects = [];   // {id,title,category,createdAt,phases:[{id,title}]}
 const expandedChunks = new Set(); // task IDs with chunk list expanded in plate view
 let curView  = 'brief';
 let _showFlex = false; // flexible-due list expanded?
+let bRoutines = false; // Tasks tab showing routines instead of tasks?
 let bFilter    = 'all';
 let bProjectFilter = false; // when true, show only tasks that belong to a project
 let bSort      = 'cat'; // 'cat' | 'date' | 'score'
@@ -833,7 +842,7 @@ let AF = {
   chunks:[],showChunks:false,
   projectId:'',phaseId:'',
   description:'',link:'',
-  priority:'normal',leadTime:'',
+  priority:'normal',leadTime:'',routine:false,
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1592,6 +1601,7 @@ function addTask(d) {
     ...(d.phaseId?{phaseId:d.phaseId}:{}),
     ...(d.priority?{priority:d.priority}:{}),
     ...(d.leadTime>0?{leadTime:d.leadTime}:{}),
+    ...(d.routine?{routine:true}:{}),
   });
   save();
 }
@@ -1777,8 +1787,7 @@ const activeTasks  = () => tasks.filter(t=>!t.completedAt);
 const plateTasks   = () => plateIdsOn(todayStr()).map(id=>tasks.find(t=>t.id===id)).filter(Boolean).filter(t=>!t.completedAt);
 
 function scoreTask(t) {
-  const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
-  if(!tOpt||!eOpt) return null;
+  // Purely deadline / priority / runway driven — no time-of-day context needed.
   let score=0;
 
   // ── Step due date urgency (highest weight) ──────────────
@@ -1811,13 +1820,17 @@ function scoreTask(t) {
     }
   }
 
-  // ── Time investment fit ──────────────────────────────────
-  if(tOpt.levels.includes(t.time))  score+=25;
-  else score-=30;
+  // ── Priority ─────────────────────────────────────────────
+  if(t.priority==='critical') score+=50;
+  else if(t.priority==='flexible') score-=25;
 
-  // ── Effort / energy fit ──────────────────────────────────
-  if(eOpt.levels.includes(t.effort)) score+=15;
-  else score-=20;
+  // ── Runway pressure: inside the start window, tighter = higher ──
+  if(!t.recurrence && t.deadline && t.leadTime>0){
+    const d=daysUntil(t.deadline);
+    if(d!==null && d<=t.leadTime && d>0){
+      score += 20 + Math.round(30 * (1 - d/t.leadTime));
+    }
+  }
 
   // ── Number of remaining steps (complexity signal) ────────
   if(t.chunks){
@@ -1829,11 +1842,9 @@ function scoreTask(t) {
 }
 
 function getSuggestions() {
-  const tOpt=TIME_OPTS.find(o=>o.v===ctx.time), eOpt=ENERGY_OPTS.find(o=>o.v===ctx.energy);
-  if(!tOpt||!eOpt) return [];
   const plateSet=new Set(plate.days?Object.values(plate.days).flat():[]);
   const fireSet=new Set(activeTasks().filter(t=>briefStatus(t)).map(t=>t.id));
-  const cands=activeTasks().filter(t=>!plateSet.has(t.id)&&!fireSet.has(t.id));
+  const cands=activeTasks().filter(t=>!t.routine&&!plateSet.has(t.id)&&!fireSet.has(t.id));
 
   return cands
     .map(t=>({t, score:scoreTask(t)}))
@@ -1870,8 +1881,9 @@ function metaRow(t) {
     <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
     ${dlTxt?`<span class="dl-tag ${dlClass(d)}">📅&nbsp;${dlTxt}</span>`:''}
     ${rlab?`<span class="recur-badge">${rlab}</span>`:''}
-    <span class="meta-tag">⏱ ${TIME_LBL[t.time]}</span>
-    <span class="meta-tag">⚡ ${EFFORT_SH[t.effort]}</span>
+    ${t.priority==='critical'?`<span class="meta-tag" style="color:var(--fire);font-weight:700">⭐ critical</span>`:t.priority==='flexible'?`<span class="meta-tag">〰 flexible</span>`:''}
+    ${t.leadTime>0?`<span class="meta-tag">▶ ${t.leadTime}d runway</span>`:''}
+    ${t.routine?`<span class="meta-tag" style="color:#2a9d94">🔁 routine</span>`:''}
     ${chunkProg}
   </div>`;
 }
@@ -1927,11 +1939,10 @@ function chunkListHtml(t, inPlate=false) {
 
 function viewBrief() {
   _rolloverPlate(); // keep the strip fresh even if the tab crossed midnight
-  const urgent  = activeTasks().filter(t=>['overdue','today'].includes(briefStatus(t)) && !plateHas(t.id))
+  const urgent  = activeTasks().filter(t=>(!t.routine || t.priority==='critical') && ['overdue','today'].includes(briefStatus(t)) && !plateHas(t.id))
                    .sort((a,b)=>(urgencyDays(a)||0)-(urgencyDays(b)||0));
   const todayPl = plateTasks();
   const sug     = getSuggestions();
-  const ctxSet  = ctx.time && ctx.energy;
 
   let h=`<div class="greeting">${greet()}, Jules</div>
           <div class="date-str">${fmtDateFull(todayStr())}</div>`;
@@ -2043,10 +2054,29 @@ function viewBrief() {
     });
   }
 
+  // ── Routines: due/overdue chores, quiet checklist (critical ones escalate to 🔥) ──
+  const routinesDue=activeTasks().filter(t=>t.routine && t.priority!=='critical' && briefStatus(t) && !plateHas(t.id))
+    .sort((a,b)=>(urgencyDays(a)||0)-(urgencyDays(b)||0));
+  if (routinesDue.length) {
+    h+=`<div class="sec-row" style="margin-top:18px"><div class="sec-hd" style="color:#2a9d94">🔁 Routines — ${routinesDue.length}</div></div>`;
+    routinesDue.forEach(t=>{
+      const c=getcat(t.category);
+      const d=urgencyDays(t);
+      h+=`<div class="flex-row" data-drag-id="${t.id}">
+        <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
+        <span class="plate-dot" style="background:${c.color}"></span>
+        <button class="wb-title" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
+        <span class="dl-tag ${dlClass(d)}" style="font-size:9px;flex-shrink:0">${d<0?Math.abs(d)+'d over':'today'}</span>
+        <button class="snooze-btn" style="flex:0 0 auto;padding:3px 9px" data-a="snooze" data-id="${t.id}" data-snooze="1d">+1d</button>
+        ${t.recurrence?`<button class="snooze-btn" style="flex:0 0 auto;padding:3px 9px" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence">↷</button>`:''}
+      </div>`;
+    });
+  }
+
   // ── Start now: long-runway tasks whose start window opened ──
   const startNow=activeTasks().filter(t=>{
     if (t.recurrence||!t.deadline||!(t.leadTime>0)) return false;
-    if (t.priority==='flexible') return false;
+    if (t.routine||t.priority==='flexible') return false;
     if (plateHas(t.id)) return false;
     if (briefStatus(t)) return false; // already due → fire section
     if (t.chunks&&t.chunks.some(c=>!c.completedAt&&c.dueDate)) return false; // dated steps pace it
@@ -2067,25 +2097,9 @@ function viewBrief() {
     });
   }
 
-  // Context picker
-  if (!ctxSet) {
-    h+=`<div class="ctx-card" style="margin-top:${todayPl.length||urgent.length?'8px':'4px'}">
-      <div class="ctx-title">How's today looking?</div>
-      <div class="ctx-row"><div class="ctx-label">Time available</div>
-        <div class="pill-group">${TIME_OPTS.map(o=>`
-          <button class="pill-btn ${ctx.time===o.v?'sel':''}" data-a="set-time" data-v="${o.v}">${o.label}</button>`).join('')}
-        </div></div>
-      <div class="ctx-row"><div class="ctx-label">Energy level</div>
-        <div class="pill-group">${ENERGY_OPTS.map(o=>`
-          <button class="pill-btn ${ctx.energy===o.v?'sel':''}" data-a="set-energy" data-v="${o.v}">${o.label}</button>`).join('')}
-        </div></div>
-    </div>`;
-  }
-
-  // Suggestions
-  if (ctxSet) {
-    h+=`<div class="sec-row" style="margin-top:36px"><div class="sec-hd">Suggested for today</div>
-          <button class="link-btn" data-a="reset-ctx">change</button></div>`;
+  // Suggestions — always on, ranked by deadline / priority / runway
+  if (sug.length) {
+    h+=`<div class="sec-row" style="margin-top:36px"><div class="sec-hd">Suggested for today</div></div>`;
     const byCat={};
     sug.forEach(t=>{ const raw=t.category||'misc'; const cid=CAT_ALIAS[raw]||raw; (byCat[cid]||(byCat[cid]=[])).push(t); });
     const effDate=t=>{
@@ -2129,7 +2143,7 @@ function viewBrief() {
     h+=`</div>`;
   }
 
-  if (!urgent.length&&!todayPl.length&&!ctxSet&&!activeTasks().length) {
+  if (!urgent.length&&!todayPl.length&&!activeTasks().length) {
     h+=`<div class="empty" style="margin-top:24px">
           <div class="empty-ico">🌱</div>
           <div class="empty-txt">No tasks yet.<br>Tap ➕ to get started!</div></div>`;
@@ -2194,8 +2208,7 @@ function viewAdd() {
       <button class="submit-btn" data-a="submit-project">Create Project</button>`;
   }
 
-  const bigTask = AF.time==='medium' || AF.time==='high';
-  const showChunkHint = bigTask && !AF.showChunks && AF.chunks.length===0;
+  const showChunkHint = !AF.showChunks && AF.chunks.length===0;
 
   const recurSection = AF.recurring ? `
     <div class="recur-box">
@@ -2300,27 +2313,19 @@ function viewAdd() {
     ` : ''}
 
     <div class="form-group">
-      <label class="form-label">Time investment</label>
-      <div class="opt-grid">
-        ${['low','medium','high'].map(v=>`
-          <button class="opt-btn ${AF.time===v?'sel':''}" data-a="set-ftime" data-v="${v}">${TIME_LBL[v]}</button>`).join('')}
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Cognitive effort</label>
-      <div class="opt-grid">
-        ${['low','medium','high'].map(v=>`
-          <button class="opt-btn ${AF.effort===v?'sel':''}" data-a="set-feffort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('')}
-      </div>
-    </div>
-
-    <div class="form-group">
       <label class="form-label">Priority</label>
       <div class="opt-grid">
         <button class="opt-btn ${AF.priority==='critical'?'sel':''}" data-a="set-fpriority" data-v="critical">⭐ Critical</button>
         <button class="opt-btn ${AF.priority==='normal'?'sel':''}" data-a="set-fpriority" data-v="normal">Normal</button>
         <button class="opt-btn ${AF.priority==='flexible'?'sel':''}" data-a="set-fpriority" data-v="flexible">Flexible</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <div class="tab-pair" style="margin-bottom:0">
+        <button class="tab-btn ${!AF.routine?'sel':''}" data-a="set-ftype" data-v="task">Task</button>
+        <button class="tab-btn ${AF.routine?'sel':''}" data-a="set-ftype" data-v="routine">🔁 Routine</button>
       </div>
     </div>
 
@@ -2336,7 +2341,10 @@ function viewAdd() {
 
     <div class="form-group">
       <label class="form-label">${AF.recurring?'First due / Start date':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(optional)</span></label>
-      <input id="f-deadline" class="form-input" type="date" min="${todayStr()}" value="${AF.deadline}">
+      <div class="date-wrap">
+        <button type="button" class="date-ico" onclick="const i=document.getElementById('f-deadline');i.showPicker?i.showPicker():i.focus()" title="Pick date"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button>
+        <input id="f-deadline" class="form-input" type="date" min="${todayStr()}" value="${AF.deadline}">
+      </div>
     </div>
 
     <div class="form-group">
@@ -2362,7 +2370,8 @@ function viewAdd() {
 // ═══════════════════════════════════════════════════════════
 
 function viewBacklog() {
-  const all=activeTasks();
+  const all=activeTasks().filter(t=>bRoutines?!!t.routine:!t.routine);
+  const routineCount=activeTasks().filter(t=>!!t.routine).length;
   const catFiltered=bFilter==='all'?all:bFilter==='_none'?all.filter(t=>{const r=t.category||'';const res=CAT_ALIAS[r]||r;return !res||!CATS.find(c=>c.id===res);}):all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===bFilter;});
   const filtered=bProjectFilter?catFiltered.filter(t=>!!t.projectId):catFiltered;
   const projCount=all.filter(t=>!!t.projectId).length;
@@ -2380,6 +2389,7 @@ function viewBacklog() {
     ${CATS.map(c=>{const n=all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===c.id;}).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
     ${(()=>{const n=all.filter(t=>{const r=t.category||'';const res=CAT_ALIAS[r]||r;return !res||!CATS.find(c=>c.id===res);}).length;return n?`<button class="fchip ${bFilter==='_none'?'on':''}" data-a="fcat" data-cat="_none">📌 ${n}</button>`:''})()}
     ${projCount?`<button class="fchip ${bProjectFilter?'on':''}" data-a="toggle-proj-filter">📁 Projects (${projCount})</button>`:''}
+    ${routineCount?`<button class="fchip ${bRoutines?'on':''}" data-a="toggle-broutines" style="${bRoutines?'background:#2a9d94;border-color:#2a9d94':''}">🔁 Routines (${routineCount})</button>`:''}
   </div>`;
   const sortRow=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
     <span style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-right:2px">Sort</span>
@@ -2548,9 +2558,9 @@ function openLogEditSheet(type, id) {
     <div style="font-size:14px;font-weight:500;margin-bottom:14px;color:var(--text-2)">${label}</div>
     ${extraFields}
     <label class="edit-label">Date</label>
-    <div style="display:flex;align-items:center;gap:6px">
-      <button type="button" onclick="document.getElementById('le-date').showPicker?document.getElementById('le-date').showPicker():document.getElementById('le-date').focus()" style="font-size:18px;background:none;border:none;cursor:pointer;padding:0;line-height:1;flex-shrink:0" title="Pick date">📅</button>
-      <input class="edit-field" id="le-date" type="date" style="flex:1;margin:0">
+    <div class="date-wrap" style="margin-bottom:4px">
+      <button type="button" class="date-ico" onclick="const i=document.getElementById('le-date');i.showPicker?i.showPicker():i.focus()" title="Pick date"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button>
+      <input class="edit-field" id="le-date" type="date" style="margin:0">
     </div>
     <label class="edit-label">Time</label>
     <input class="edit-field" id="le-time" type="time">
@@ -2611,10 +2621,10 @@ function doSaveEdit(id, btn) {
       t.nextDue=null;
       t.deadline=dateVal;
     }
-    t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
-    t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
     const priV=document.querySelector('#edit-modal [data-et="priority"].sel')?.dataset.v;
     if(priV){ if(priV==='normal') delete t.priority; else t.priority=priV; }
+    const typV=document.querySelector('#edit-modal [data-et="ttype"].sel')?.dataset.v;
+    if(typV){ if(typV==='routine') t.routine=true; else delete t.routine; }
     const leadV=parseInt(document.getElementById('et-lead')?.value);
     if(leadV>0) t.leadTime=leadV; else delete t.leadTime;
     {
@@ -2676,8 +2686,6 @@ function openEditSheet(id) {
   const projOpts=`<option value="">— No project —</option>`+projects.map(p=>`<option value="${p.id}"${t.projectId===p.id?' selected':''}>${esc(p.title)}</option>`).join('');
   const initPhases=curProj?.phases||[];
   const phaseOpts=`<option value="">— No phase —</option>`+initPhases.map(ph=>`<option value="${ph.id}"${t.phaseId===ph.id?' selected':''}>${esc(ph.title)}</option>`).join('');
-  const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${t.time===v?' sel':''}" data-et="time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
-  const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${t.effort===v?' sel':''}" data-et="effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
   const el=document.createElement('div');
   el.id='edit-modal'; el.className='modal-ov';
   el.innerHTML=`<div class="modal-sheet" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
@@ -2747,9 +2755,9 @@ function openEditSheet(id) {
         </div>
       </div>
       <label class="edit-label" id="et-date-label">${t.recurrence?'Next due':'Deadline'} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
-      <div style="display:flex;align-items:center;gap:6px">
-        <button type="button" onclick="document.getElementById('et-date').showPicker?document.getElementById('et-date').showPicker():document.getElementById('et-date').focus()" style="font-size:18px;background:none;border:none;cursor:pointer;padding:0;line-height:1;flex-shrink:0" title="Pick date">📅</button>
-        <input class="edit-field" id="et-date" type="date" value="${dateVal}" style="flex:1;margin:0">
+      <div class="date-wrap" style="margin-bottom:4px">
+        <button type="button" class="date-ico" onclick="const i=document.getElementById('et-date');i.showPicker?i.showPicker():i.focus()" title="Pick date"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button>
+        <input class="edit-field" id="et-date" type="date" value="${dateVal}" style="margin:0">
       </div>
       <div class="snooze-row">
         <button type="button" class="snooze-btn" data-snooze="1">+1d</button>
@@ -2757,15 +2765,16 @@ function openEditSheet(id) {
         <button type="button" class="snooze-btn" data-snooze="7">+1w</button>
         <button type="button" class="snooze-btn" data-snooze="14">+2w</button>
       </div>
-      <label class="edit-label">Time needed</label>
-      <div class="edit-pills">${timePills}</div>
-      <label class="edit-label">Effort</label>
-      <div class="edit-pills">${effortPills}</div>
       <label class="edit-label">Priority</label>
       <div class="edit-pills">
         <button class="edit-pill${t.priority==='critical'?' sel':''}" data-et="priority" data-v="critical">⭐ Critical</button>
         <button class="edit-pill${!t.priority?' sel':''}" data-et="priority" data-v="normal">Normal</button>
         <button class="edit-pill${t.priority==='flexible'?' sel':''}" data-et="priority" data-v="flexible">Flexible</button>
+      </div>
+      <label class="edit-label">Type</label>
+      <div class="edit-pills">
+        <button class="edit-pill${!t.routine?' sel':''}" data-et="ttype" data-v="task">Task</button>
+        <button class="edit-pill${t.routine?' sel':''}" data-et="ttype" data-v="routine">🔁 Routine</button>
       </div>
       <label class="edit-label">Runway <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">days of work needed before the deadline — feeds "Start now"</span></label>
       <input class="edit-field" id="et-lead" type="number" min="0" placeholder="e.g. 21" value="${t.leadTime||''}">
@@ -3000,8 +3009,6 @@ function openAddProjectTaskModal(projId, phaseId) {
   const sub=phase?`${esc(proj?.title||'')} — ${esc(phase.title)}`:(proj?esc(proj.title):'');
   const defaultCat='comp-admin';
   const catOpts=`<option value="" selected>— Uncategorized —</option>`+CATS.map(c=>`<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
-  const timePills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-time" data-v="${v}">${TIME_LBL[v]}</button>`).join('');
-  const effortPills=['low','medium','high'].map(v=>`<button class="edit-pill${v==='medium'?' sel':''}" data-et="pt-effort" data-v="${v}">${EFFORT_LBL[v]}</button>`).join('');
   const el=document.createElement('div');
   el.id='ptask-modal'; el.className='modal-ov';
   el.innerHTML=`<div class="modal-sheet" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
@@ -3042,10 +3049,14 @@ function openAddProjectTaskModal(projId, phaseId) {
         <label class="edit-label">Deadline <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
         <input class="edit-field" id="pt-deadline" type="date">
       </div>
-      <label class="edit-label">Time needed</label>
-      <div class="edit-pills">${timePills}</div>
-      <label class="edit-label">Effort</label>
-      <div class="edit-pills">${effortPills}</div>
+      <label class="edit-label">Priority</label>
+      <div class="edit-pills">
+        <button class="edit-pill" data-et="pt-priority" data-v="critical">⭐ Critical</button>
+        <button class="edit-pill sel" data-et="pt-priority" data-v="normal">Normal</button>
+        <button class="edit-pill" data-et="pt-priority" data-v="flexible">Flexible</button>
+      </div>
+      <label class="edit-label">Runway <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">days of work needed before the deadline — feeds "Start now"</span></label>
+      <input class="edit-field" id="pt-lead" type="number" min="0" placeholder="e.g. 21">
     </div>
     <div style="padding:8px 16px calc(12px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid var(--border)">
       <button type="button" class="modal-done" onclick="doCreateProjectTask('${projId}','${phaseId||''}',this)">Add Task</button>
@@ -3082,8 +3093,7 @@ function doCreateProjectTask(projId, phaseId, btn) {
   const desc=(document.getElementById('pt-desc')?.value||'').trim()||undefined;
   const link=(document.getElementById('pt-link')?.value||'').trim()||undefined;
   const el=document.getElementById('ptask-modal');
-  const time=el?.querySelector('[data-et="pt-time"].sel')?.dataset.v||'medium';
-  const effort=el?.querySelector('[data-et="pt-effort"].sel')?.dataset.v||'medium';
+  const time='medium', effort='medium'; // matrix dimensions retired — kept for data compat
   const proj=projects.find(p=>p.id===projId);
   if(!proj){showToast('Project not found');return;}
   // Recurring vs one-time
@@ -3097,12 +3107,16 @@ function doCreateProjectTask(projId, phaseId, btn) {
   } else {
     deadline=document.getElementById('pt-deadline')?.value||null;
   }
+  const ptPri=el?.querySelector('[data-et="pt-priority"].sel')?.dataset.v;
+  const ptLead=parseInt(document.getElementById('pt-lead')?.value);
   tasks.push({
     id:newId(), title, category,
     time, effort, deadline, recurrence, nextDue,
     chunks:null, createdAt:localISOStr(), completedAt:null,
     projectId:projId, phaseId:phaseId||undefined,
     description:desc, link,
+    ...(ptPri&&ptPri!=='normal'?{priority:ptPri}:{}),
+    ...(ptLead>0?{leadTime:ptLead}:{}),
   });
   save();
   } catch(e){ console.error('doCreateProjectTask error',e); }
@@ -3190,29 +3204,10 @@ document.addEventListener('click', e=>{
       syncAF(); AF.priority=btn.dataset.v;
       document.querySelectorAll('[data-a="set-fpriority"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===AF.priority));
       break;
-
-    case 'set-time':
-      ctx.time=btn.dataset.v; ctx.date=todayStr(); save();
-      document.querySelectorAll('[data-a="set-time"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===ctx.time));
-      if(ctx.time&&ctx.energy) rv(); break;
-
-    case 'set-energy':
-      ctx.energy=btn.dataset.v; ctx.date=todayStr(); save();
-      document.querySelectorAll('[data-a="set-energy"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===ctx.energy));
-      if(ctx.time&&ctx.energy) rv(); break;
-
-    case 'reset-ctx': ctx.time=null;ctx.energy=null;save();rv(); break;
-
-    case 'set-ftime':
-      syncAF(); AF.time=btn.dataset.v;
-      document.querySelectorAll('[data-a="set-ftime"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===AF.time));
-      // Re-render only if chunk hint visibility changes
-      { const was=AF.showChunks||AF.chunks.length>0; if(!was) rv(); } break;
-
-    case 'set-feffort':
-      syncAF(); AF.effort=btn.dataset.v;
-      document.querySelectorAll('[data-a="set-feffort"]').forEach(b=>b.classList.toggle('sel',b.dataset.v===AF.effort));
-      { const was=AF.showChunks||AF.chunks.length>0; if(!was) rv(); } break;
+    case 'set-ftype':
+      syncAF(); AF.routine=btn.dataset.v==='routine';
+      document.querySelectorAll('[data-a="set-ftype"]').forEach(b=>b.classList.toggle('sel',(b.dataset.v==='routine')===AF.routine));
+      break;
 
     case 'toggle-recurring':
       syncAF(); AF.recurring=!AF.recurring;
@@ -3272,17 +3267,19 @@ document.addEventListener('click', e=>{
                ...(desc?{description:desc}:{}),
                ...(lnk?{link:lnk}:{}),
                ...(AF.priority&&AF.priority!=='normal'?{priority:AF.priority}:{}),
-               ...(leadN>0?{leadTime:leadN}:{})});
+               ...(leadN>0?{leadTime:leadN}:{}),
+               ...(AF.routine?{routine:true}:{})});
       AF={title:'',category:null,time:'medium',effort:'medium',
           deadline:'',recurring:false,recurType:'interval',
           recurEvery:'1',recurUnit:'days',recurWeek:'1',recurWeekday:'1',recurMonthInterval:'1',recurMonthDay:'1',
           chunks:[],showChunks:false,projectId:'',phaseId:'',description:'',link:'',
-          priority:'normal',leadTime:''};
+          priority:'normal',leadTime:'',routine:false};
       setTimeout(()=>navigate('backlog'), 350); break;
     }
 
     case 'fcat': bFilter=btn.dataset.cat; rv(); break;
     case 'toggle-proj-filter': bProjectFilter=!bProjectFilter; rv(); break;
+    case 'toggle-broutines': bRoutines=!bRoutines; rv(); break;
     case 'set-sort': bSort=btn.dataset.v; rv(); break;
 
     case 'confirm-recur': doCompleteRecur(id, btn.dataset.next); break;
@@ -3407,10 +3404,10 @@ document.addEventListener('click', e=>{
       } else {
         t.recurrence=null; t.nextDue=null; t.deadline=dateVal2;
       }
-      t.time=document.querySelector('#edit-modal [data-et="time"].sel')?.dataset.v||t.time;
-      t.effort=document.querySelector('#edit-modal [data-et="effort"].sel')?.dataset.v||t.effort;
       const priV2=document.querySelector('#edit-modal [data-et="priority"].sel')?.dataset.v;
       if(priV2){ if(priV2==='normal') delete t.priority; else t.priority=priV2; }
+      const typV2=document.querySelector('#edit-modal [data-et="ttype"].sel')?.dataset.v;
+      if(typV2){ if(typV2==='routine') t.routine=true; else delete t.routine; }
       const leadV2=parseInt(document.getElementById('et-lead')?.value);
       if(leadV2>0) t.leadTime=leadV2; else delete t.leadTime;
       {
@@ -3528,6 +3525,45 @@ function initWeekDrag() {
 load();
 initSync();
 initWeekDrag();
+
+// ── One-time import: 9/17 meeting notes (Julie items) ───────
+// Fixed ids make this idempotent: even if both devices run it before
+// syncing, the merge unions by id and keeps exactly one copy.
+if (!localStorage.getItem('tm_imp_20260917')) {
+  const IMP = [
+    {id:'imp0917a', title:'Org cheatsheet / organization-gram', description:'Create (or find) — include ReNEW, CIGLR, etc.', category:'comp-admin', deadline:'2026-09-28'},
+    {id:'imp0917b', title:'Nancy prep document', description:'Start a doc to prep before next talking to Nancy', category:'comp-admin', deadline:'2026-09-28'},
+    {id:'imp0917c', title:'Lightcast data costs', description:'$10K year 1; $5K year 2 — can push back if needed', category:'comp-admin', deadline:'2026-09-28'},
+    {id:'imp0917d', title:'Project Timeline outline', category:'comp-admin', deadline:'2026-09-28'},
+    {id:'imp0917e', title:'Washtenaw water plant tour', description:'Water retention/treatment plant tour — with Al', category:'out-about'},
+  ];
+  IMP.forEach(n => {
+    if (!tasks.some(t=>t.id===n.id)) tasks.push({
+      time:'medium', effort:'medium', recurrence:null, nextDue:null, chunks:null,
+      createdAt:localISOStr(), completedAt:null, deadline:null, ...n,
+    });
+  });
+  localStorage.setItem('tm_imp_20260917','1');
+  save();
+  rv();
+}
+
+// ── Routine migration v2: TRUE household categories only ────
+// v1 wrongly used the display alias (which folds legacy 'crafts-work' into
+// Home·Health), flagging recurring work tasks as routines. v2 undoes that and
+// flags only genuine household items. Runs once; manual toggles win afterward.
+if (!localStorage.getItem('tm_routine_mig_2')) {
+  const HOUSEHOLD=['house','personal','home-health'];
+  let chg=0;
+  tasks.forEach(t=>{
+    const isHH=HOUSEHOLD.includes(t.category);
+    if (t.routine && !isHH) { delete t.routine; chg++; }
+    if (!t.routine && t.recurrence && isHH) { t.routine=true; chg++; }
+  });
+  localStorage.setItem('tm_routine_mig_1','1'); // supersede v1
+  localStorage.setItem('tm_routine_mig_2','1');
+  if (chg) { save(); rv(); }
+}
 
 // ── One-time seed: GGVI project task ────────────────────────
 // DISABLED: already delivered to the cloud; re-running on a fresh browser
