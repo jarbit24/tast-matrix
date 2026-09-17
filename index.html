@@ -475,8 +475,13 @@
     .start-row { border-left:3px solid var(--upcoming); cursor:grab;
                  -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
     .start-meta { font-size:10px; color:var(--upcoming); white-space:nowrap; flex-shrink:0; }
+    .routine-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px;
+                    align-items:start; margin-top:2px; }
+    .routine-grid .flex-row { margin-top:0; }
+    @media (max-width: 1100px) { .routine-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
     @media (max-width: 640px) {
       .week-board { grid-template-columns:repeat(3,1fr); }
+      .routine-grid { grid-template-columns:1fr; }
       .week-board .wb-today { grid-column:1/-1; min-height:0; }
       .week-board .week-day { min-height:80px; }
       .start-meta { white-space:normal; }
@@ -2082,6 +2087,7 @@ function viewBrief() {
     .sort((a,b)=>(urgencyDays(a)||0)-(urgencyDays(b)||0));
   if (routinesDue.length) {
     h+=`<div class="sec-row" style="margin-top:18px"><div class="sec-hd" style="color:#2a9d94">🔁 Routines — ${routinesDue.length}</div></div>`;
+    h+=`<div class="routine-grid">`;
     routinesDue.forEach(t=>{
       const c={color:taskColor(t)};
       const d=urgencyDays(t);
@@ -2094,6 +2100,7 @@ function viewBrief() {
         ${t.recurrence?`<button class="snooze-btn" style="flex:0 0 auto;padding:3px 9px" data-a="skip-recur" data-id="${t.id}" title="Skip to next occurrence">↷</button>`:''}
       </div>`;
     });
+    h+=`</div>`;
   }
 
   // ── Start now: long-runway tasks whose start window opened ──
