@@ -1969,7 +1969,6 @@ function viewBrief() {
   const urgent  = activeTasks().filter(t=>(!t.routine || t.priority==='critical') && ['overdue','today'].includes(briefStatus(t)) && !plateHas(t.id))
                    .sort((a,b)=>(urgencyDays(a)||0)-(urgencyDays(b)||0));
   const todayPl = plateTasks();
-  const sug     = getSuggestions();
 
   let h=`<div class="greeting">${greet()}, Jules</div>
           <div class="date-str">${fmtDateFull(todayStr())}</div>`;
@@ -2119,34 +2118,6 @@ function viewBrief() {
         <button class="upcoming-add" data-a="add-plate" data-id="${t.id}">+</button>
       </div>`;
     });
-  }
-
-  // Suggestions — always on, ranked by deadline / priority / runway
-  if (sug.length) {
-    h+=`<div class="sec-row" style="margin-top:36px"><div class="sec-hd">Suggested for today</div></div>`;
-    h+=`<div class="sug-cat-col" style="padding:8px 10px">`;
-    sug.forEach(t=>{
-      // Show all today/overdue steps + next upcoming step
-      const sugWithDue = t.chunks
-        ? t.chunks.filter(c=>!c.completedAt&&c.dueDate).sort((a,b)=>a.dueDate<b.dueDate?-1:1)
-        : [];
-      const urgentSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)<=0);
-      const futureSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)>0);
-      const nextFutureSug = futureSug[0];
-      const sugStepsToShow = [...urgentSug, ...(nextFutureSug?[nextFutureSug]:[])];
-      const dlSrc = sugStepsToShow.length ? sugStepsToShow[0].dueDate : (t.recurrence?t.nextDue:t.deadline);
-      const d = daysUntil(dlSrc);
-      const dlTxt = d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':`${d}d`):'';
-      const stepHints = sugStepsToShow.map(c=>`<div class="sug-cat-step">↳ ${esc(c.title)}</div>`).join('');
-      h+=`<div class="sug-cat-item">
-        <button class="sug-cat-add" data-a="add-plate" data-id="${t.id}">+</button>
-        <span class="plate-dot" style="background:${taskColor(t)};margin-top:6px"></span>
-        <div style="min-width:0;overflow:hidden;flex:1"><button class="sug-cat-ttl" data-a="open-edit" data-id="${t.id}">${t.priority==='critical'?'⭐ ':''}${esc(t.title)}</button>
-        ${stepHints}
-        ${dlTxt?`<div class="sug-cat-dl">${dlTxt}</div>`:''}</div>
-      </div>`;
-    });
-    h+=`</div>`;
   }
 
   if (!urgent.length&&!todayPl.length&&!activeTasks().length) {
