@@ -1553,16 +1553,20 @@ function _deriveDeadlines() {
 // Per-task routine migration: runs whenever an undecided task (no rtv marker)
 // is seen — at load, on save, and when tasks arrive from the cloud. This avoids
 // the one-shot-per-browser race where migration ran before cloud data loaded.
-// Once a task carries rtv:1, only manual toggles change its type.
+// Once a task carries rtv:2, only manual toggles change its type.
 function _migrateRoutines() {
-  const HOUSEHOLD=['house','personal','home-health']; // raw categories, NOT display aliases
+  // v3: classify by DISPLAY category. Historical quirk: the id 'creative'
+  // is the category that displays as 🏠 Home · Health (labels were reshuffled
+  // without renaming ids), so household = resolved id 'creative'.
+  // rtv:2 marks a task as decided; earlier wrong passes (rtv:1) get re-decided.
   let chg=0;
   tasks.forEach(t=>{
-    if (t.rtv===1) return;
-    const isHH=HOUSEHOLD.includes(t.category);
+    if (t.rtv===2) return;
+    const disp = CAT_ALIAS[t.category]||t.category;
+    const isHH = disp==='creative';
     if (t.routine && !isHH) delete t.routine;
     if (!t.routine && t.recurrence && isHH) t.routine=true;
-    t.rtv=1; chg++;
+    t.rtv=2; chg++;
   });
   return chg;
 }
@@ -1615,7 +1619,7 @@ function addTask(d) {
     recurrence: d.recurrence||null,
     nextDue: isRecur ? firstDue : null,
     chunks: d.chunks&&d.chunks.length ? d.chunks : null,
-    createdAt:localISOStr(), completedAt:null, rtv:1,
+    createdAt:localISOStr(), completedAt:null, rtv:2,
     ...(d.description?{description:d.description}:{}),
     ...(d.link?{link:d.link}:{}),
     ...(d.projectId?{projectId:d.projectId}:{}),
@@ -2645,7 +2649,7 @@ function doSaveEdit(id, btn) {
     const priV=document.querySelector('#edit-modal [data-et="priority"].sel')?.dataset.v;
     if(priV){ if(priV==='normal') delete t.priority; else t.priority=priV; }
     const typV=document.querySelector('#edit-modal [data-et="ttype"].sel')?.dataset.v;
-    if(typV){ if(typV==='routine') t.routine=true; else delete t.routine; t.rtv=1; }
+    if(typV){ if(typV==='routine') t.routine=true; else delete t.routine; t.rtv=2; }
     const leadV=parseInt(document.getElementById('et-lead')?.value);
     if(leadV>0) t.leadTime=leadV; else delete t.leadTime;
     {
@@ -3133,7 +3137,7 @@ function doCreateProjectTask(projId, phaseId, btn) {
   tasks.push({
     id:newId(), title, category,
     time, effort, deadline, recurrence, nextDue,
-    chunks:null, createdAt:localISOStr(), completedAt:null, rtv:1,
+    chunks:null, createdAt:localISOStr(), completedAt:null, rtv:2,
     projectId:projId, phaseId:phaseId||undefined,
     description:desc, link,
     ...(ptPri&&ptPri!=='normal'?{priority:ptPri}:{}),
@@ -3428,7 +3432,7 @@ document.addEventListener('click', e=>{
       const priV2=document.querySelector('#edit-modal [data-et="priority"].sel')?.dataset.v;
       if(priV2){ if(priV2==='normal') delete t.priority; else t.priority=priV2; }
       const typV2=document.querySelector('#edit-modal [data-et="ttype"].sel')?.dataset.v;
-      if(typV2){ if(typV2==='routine') t.routine=true; else delete t.routine; t.rtv=1; }
+      if(typV2){ if(typV2==='routine') t.routine=true; else delete t.routine; t.rtv=2; }
       const leadV2=parseInt(document.getElementById('et-lead')?.value);
       if(leadV2>0) t.leadTime=leadV2; else delete t.leadTime;
       {
@@ -3561,7 +3565,7 @@ if (!localStorage.getItem('tm_imp_20260917')) {
   IMP.forEach(n => {
     if (!tasks.some(t=>t.id===n.id)) tasks.push({
       time:'medium', effort:'medium', recurrence:null, nextDue:null, chunks:null,
-      createdAt:localISOStr(), completedAt:null, deadline:null, rtv:1, ...n,
+      createdAt:localISOStr(), completedAt:null, deadline:null, rtv:2, ...n,
     });
   });
   localStorage.setItem('tm_imp_20260917','1');
