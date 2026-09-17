@@ -828,7 +828,7 @@ let _showFlex = false; // flexible-due list expanded?
 let bRoutines = false; // Tasks tab showing routines instead of tasks?
 let bFilter    = 'all';
 let bProjectFilter = false; // when true, show only tasks that belong to a project
-let bSort      = 'cat'; // 'cat' | 'date' | 'score'
+let bSort      = 'date'; // 'date' | 'score'
 let bSearch    = '';
 let addTab       = 'task'; // 'task' | 'project'
 let projDetailId = null;   // project id currently drilled into
@@ -891,6 +891,8 @@ function chunkHints(t) {
 }
 const dlClass   = d => d===null?'':d<0?'dl-overdue':d===0?'dl-today':'dl-future';
 const getcat    = id => { const r=id?(CAT_ALIAS[id]||id):null; return (r&&CATS.find(c=>c.id===r))||{id:'_none',name:'Uncategorized',emoji:'📌',color:'#aaa',textColor:'white'}; };
+// Categories retired from the UI (Sept 2026): task color now signals type/priority.
+const taskColor = t => t.priority==='critical' ? '#C2624F' : t.routine ? '#2a9d94' : t.priority==='flexible' ? '#ABABAB' : '#7B9E87';
 
 function daysUntil(dl) {
   if (!dl) return null;
@@ -1896,14 +1898,14 @@ function showToast(msg){
 // ═══════════════════════════════════════════════════════════
 
 function metaRow(t) {
-  const c=getcat(t.category);
+  const c={color:taskColor(t)};
   const dueDate=t.recurrence?t.nextDue:t.deadline;
   const d=daysUntil(dueDate);
   const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':fmtDateShort(dueDate)):'';
   const chunkProg=(t.chunks&&t.chunks.length)?`<span class="progress-badge">${t.chunks.filter(c=>c.completedAt).length}/${t.chunks.length} steps</span>`:'';
   const rlab=recurLabel(t.recurrence);
   return `<div class="task-meta">
-    <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
+    <span class="plate-dot" style="background:${c.color};align-self:center"></span>
     ${dlTxt?`<span class="dl-tag ${dlClass(d)}">📅&nbsp;${dlTxt}</span>`:''}
     ${rlab?`<span class="recur-badge">${rlab}</span>`:''}
     ${t.priority==='critical'?`<span class="meta-tag" style="color:var(--fire);font-weight:700">⭐ critical</span>`:t.priority==='flexible'?`<span class="meta-tag">〰 flexible</span>`:''}
@@ -1986,7 +1988,7 @@ function viewBrief() {
         h+=`<div class="week-day wb-today" data-day="${ds}">
           <div class="wb-hd">Today ${dd.getDate()}${dayTasks.length?`<button class="link-btn" data-a="clear-plate" style="float:right;font-size:10px">clear</button>`:''}</div>
           ${dayTasks.map(t=>{
-            const c=getcat(t.category);
+            const c={color:taskColor(t)};
             const dl=t.recurrence?t.nextDue:t.deadline;
             const d=dl?daysUntil(dl):null;
             const badge=(t.chunks&&t.chunks.length)
@@ -2010,7 +2012,7 @@ function viewBrief() {
         h+=`<div class="week-day" data-day="${ds}">
           <div class="wb-hd">${lbl} ${dd.getDate()}</div>
           ${dayTasks.map(t=>{
-            const c=getcat(t.category);
+            const c={color:taskColor(t)};
             return `<div class="wb-chip" data-drag-id="${t.id}">
               <span class="plate-dot" style="background:${c.color};width:7px;height:7px"></span>
               <button class="wb-chip-txt" data-a="open-edit" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>
@@ -2033,17 +2035,14 @@ function viewBrief() {
     [...critDue,...normDue].forEach(t=>{
       const d=urgencyDays(t); // includes pending step dates
       const dlTxt=d!==null?(d<0?`${Math.abs(d)}d overdue`:'today'):'';
-      const c=getcat(t.category);
+      const c={color:taskColor(t)};
       const isCrit=t.priority==='critical';
       h+=`<div class="fire-card${isCrit?' fire-critical':''}" style="margin-bottom:0">
         <div class="fire-top">
           <div class="fire-title">${isCrit?'⭐ ':''}${titleLink(t)}</div>
           ${dlTxt?`<span class="days-badge" style="background:var(--fire-light);color:var(--fire)">${dlTxt}</span>`:''}
         </div>
-        <div class="task-meta" style="margin-bottom:6px">
-          <span class="cat-chip" style="background:${c.color};color:${c.textColor||'white'}">${c.emoji} ${c.name}</span>
-          ${t.recurrence?`<span class="recur-badge">${recurLabel(t.recurrence)}</span>`:''}
-        </div>
+        ${t.recurrence?`<div class="task-meta" style="margin-bottom:6px"><span class="recur-badge">${recurLabel(t.recurrence)}</span></div>`:''}
         ${chunkListHtml(t, true)}
         <div class="fire-btns">
           <button class="fire-btn fire-btn-done" data-a="complete" data-id="${t.id}">✓ Done</button>
@@ -2067,7 +2066,7 @@ function viewBrief() {
   if (flexDue.length) {
     h+=`<div style="margin-top:10px"><button class="link-btn" data-a="toggle-flex">${_showFlex?'▾ hide':'▸ show'} ${flexDue.length} flexible task${flexDue.length>1?'s':''} due</button></div>`;
     if (_showFlex) flexDue.forEach(t=>{
-      const c=getcat(t.category);
+      const c={color:taskColor(t)};
       const d=urgencyDays(t);
       h+=`<div class="flex-row" data-drag-id="${t.id}">
         <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
@@ -2085,7 +2084,7 @@ function viewBrief() {
   if (routinesDue.length) {
     h+=`<div class="sec-row" style="margin-top:18px"><div class="sec-hd" style="color:#2a9d94">🔁 Routines — ${routinesDue.length}</div></div>`;
     routinesDue.forEach(t=>{
-      const c=getcat(t.category);
+      const c={color:taskColor(t)};
       const d=urgencyDays(t);
       h+=`<div class="flex-row" data-drag-id="${t.id}">
         <button class="plate-check" data-a="complete" data-id="${t.id}"></button>
@@ -2111,7 +2110,7 @@ function viewBrief() {
   if (startNow.length) {
     h+=`<div class="sec-row" style="margin-top:18px"><div class="sec-hd" style="color:var(--upcoming)">▶ Start now</div></div>`;
     startNow.forEach(t=>{
-      const c=getcat(t.category);
+      const c={color:taskColor(t)};
       const left=daysUntil(t.deadline);
       h+=`<div class="start-row" data-drag-id="${t.id}">
         <span class="plate-dot" style="background:${c.color}"></span>
@@ -2125,45 +2124,27 @@ function viewBrief() {
   // Suggestions — always on, ranked by deadline / priority / runway
   if (sug.length) {
     h+=`<div class="sec-row" style="margin-top:36px"><div class="sec-hd">Suggested for today</div></div>`;
-    const byCat={};
-    sug.forEach(t=>{ const raw=t.category||'misc'; const cid=CAT_ALIAS[raw]||raw; (byCat[cid]||(byCat[cid]=[])).push(t); });
-    const effDate=t=>{
-      if(t.chunks&&t.chunks.length){
-        const sd=t.chunks.filter(c=>!c.completedAt&&c.dueDate).map(c=>c.dueDate).sort();
-        if(sd.length) return sd[0];
-      }
-      return (t.recurrence?t.nextDue:t.deadline)||'9999';
-    };
-    h+=`<div class="sug-cat-grid">`;
-    SUG_CAT_ORDER.forEach(cid=>{
-      const cat=getcat(cid);
-      const catTasks=(byCat[cid]||[]).slice().sort((a,b)=>effDate(a)<effDate(b)?-1:1);
-      h+=`<div class="sug-cat-col">
-        <div class="sug-cat-hd" style="background:${cat.color}">
-          <span class="sug-cat-hd-emoji">${cat.emoji}</span>
-          <span class="sug-cat-hd-name" style="color:${cat.textColor||'white'}">${cat.name}</span>
-        </div>`;
-      catTasks.forEach(t=>{
-        // Show all today/overdue steps + next upcoming step
-        const sugWithDue = t.chunks
-          ? t.chunks.filter(c=>!c.completedAt&&c.dueDate).sort((a,b)=>a.dueDate<b.dueDate?-1:1)
-          : [];
-        const urgentSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)<=0);
-        const futureSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)>0);
-        const nextFutureSug = futureSug[0];
-        const sugStepsToShow = [...urgentSug, ...(nextFutureSug?[nextFutureSug]:[])];
-        const dlSrc = sugStepsToShow.length ? sugStepsToShow[0].dueDate : (t.recurrence?t.nextDue:t.deadline);
-        const d = daysUntil(dlSrc);
-        const dlTxt = d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':`${d}d`):'';
-        const stepHints = sugStepsToShow.map(c=>`<div class="sug-cat-step">↳ ${esc(c.title)}</div>`).join('');
-        h+=`<div class="sug-cat-item">
-          <button class="sug-cat-add" data-a="add-plate" data-id="${t.id}">+</button>
-          <div style="min-width:0;overflow:hidden"><button class="sug-cat-ttl" data-a="open-edit" data-id="${t.id}">${esc(t.title)}</button>
-          ${stepHints}
-          ${dlTxt?`<div class="sug-cat-dl">${dlTxt}</div>`:''}</div>
-        </div>`;
-      });
-      h+=`</div>`;
+    h+=`<div class="sug-cat-col" style="padding:8px 10px">`;
+    sug.forEach(t=>{
+      // Show all today/overdue steps + next upcoming step
+      const sugWithDue = t.chunks
+        ? t.chunks.filter(c=>!c.completedAt&&c.dueDate).sort((a,b)=>a.dueDate<b.dueDate?-1:1)
+        : [];
+      const urgentSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)<=0);
+      const futureSug  = sugWithDue.filter(c=>daysUntil(c.dueDate)>0);
+      const nextFutureSug = futureSug[0];
+      const sugStepsToShow = [...urgentSug, ...(nextFutureSug?[nextFutureSug]:[])];
+      const dlSrc = sugStepsToShow.length ? sugStepsToShow[0].dueDate : (t.recurrence?t.nextDue:t.deadline);
+      const d = daysUntil(dlSrc);
+      const dlTxt = d!==null?(d<0?`${Math.abs(d)}d overdue`:d===0?'today':`${d}d`):'';
+      const stepHints = sugStepsToShow.map(c=>`<div class="sug-cat-step">↳ ${esc(c.title)}</div>`).join('');
+      h+=`<div class="sug-cat-item">
+        <button class="sug-cat-add" data-a="add-plate" data-id="${t.id}">+</button>
+        <span class="plate-dot" style="background:${taskColor(t)};margin-top:6px"></span>
+        <div style="min-width:0;overflow:hidden;flex:1"><button class="sug-cat-ttl" data-a="open-edit" data-id="${t.id}">${t.priority==='critical'?'⭐ ':''}${esc(t.title)}</button>
+        ${stepHints}
+        ${dlTxt?`<div class="sug-cat-dl">${dlTxt}</div>`:''}</div>
+      </div>`;
     });
     h+=`</div>`;
   }
@@ -2190,7 +2171,6 @@ function syncAF() {
   if(g('f-weekday')) AF.recurWeekday=g('f-weekday').value;
   if(g('f-moint'))    AF.recurMonthInterval=g('f-moint').value;
   if(g('f-monthday')) AF.recurMonthDay=g('f-monthday').value;
-  if(g('f-cat'))     AF.category=g('f-cat').value||null;
   if(g('f-proj'))    AF.projectId=g('f-proj').value||'';
   if(g('f-phase'))   AF.phaseId=g('f-phase').value||'';
   if(g('f-desc'))    AF.description=g('f-desc').value||'';
@@ -2311,14 +2291,6 @@ function viewAdd() {
       <input id="f-title" class="form-input" type="text" placeholder="Task title…" autocomplete="off">
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Category <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
-      <select id="f-cat" class="form-select">
-        <option value="" ${!AF.category?'selected':''}>— Uncategorized —</option>
-        ${CATS.map(c=>`<option value="${c.id}" ${AF.category===c.id?'selected':''}>${c.emoji} ${c.name}</option>`).join('')}
-      </select>
-    </div>
-
     ${projects.length ? `
     <div class="form-group">
       <label class="form-label">Project <span style="font-weight:400;font-size:11px;color:var(--text-3)">(optional)</span></label>
@@ -2397,7 +2369,7 @@ function viewAdd() {
 function viewBacklog() {
   const all=activeTasks().filter(t=>bRoutines?!!t.routine:!t.routine);
   const routineCount=activeTasks().filter(t=>!!t.routine).length;
-  const catFiltered=bFilter==='all'?all:bFilter==='_none'?all.filter(t=>{const r=t.category||'';const res=CAT_ALIAS[r]||r;return !res||!CATS.find(c=>c.id===res);}):all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===bFilter;});
+  const catFiltered=all; // category filters retired
   const filtered=bProjectFilter?catFiltered.filter(t=>!!t.projectId):catFiltered;
   const projCount=all.filter(t=>!!t.projectId).length;
 
@@ -2410,15 +2382,12 @@ function viewBacklog() {
   };
 
   const chips=`<div class="filter-row">
-    <button class="fchip ${bFilter==='all'?'on':''}" data-a="fcat" data-cat="all">All (${all.length})</button>
-    ${CATS.map(c=>{const n=all.filter(t=>{const r=t.category||'';return (CAT_ALIAS[r]||r)===c.id;}).length; return n?`<button class="fchip ${bFilter===c.id?'on':''}" data-a="fcat" data-cat="${c.id}" title="${c.name}">${c.emoji} ${n}</button>`:''}).join('')}
-    ${(()=>{const n=all.filter(t=>{const r=t.category||'';const res=CAT_ALIAS[r]||r;return !res||!CATS.find(c=>c.id===res);}).length;return n?`<button class="fchip ${bFilter==='_none'?'on':''}" data-a="fcat" data-cat="_none">📌 ${n}</button>`:''})()}
+    <span class="fchip" style="cursor:default">All (${all.length})</span>
     ${projCount?`<button class="fchip ${bProjectFilter?'on':''}" data-a="toggle-proj-filter">📁 Projects (${projCount})</button>`:''}
     ${routineCount?`<button class="fchip ${bRoutines?'on':''}" data-a="toggle-broutines" style="${bRoutines?'background:#2a9d94;border-color:#2a9d94':''}">🔁 Routines (${routineCount})</button>`:''}
   </div>`;
   const sortRow=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
     <span style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-right:2px">Sort</span>
-    <button class="fchip ${bSort==='cat'?'on':''}" data-a="set-sort" data-v="cat">Category</button>
     <button class="fchip ${bSort==='date'?'on':''}" data-a="set-sort" data-v="date">By date</button>
     <button class="fchip ${bSort==='score'?'on':''}" data-a="set-sort" data-v="score">By score</button>
   </div>`;
@@ -2435,39 +2404,12 @@ function viewBacklog() {
     body+=`<div class="task-grid">`;
     sorted.forEach(t=>{body+=taskRow(t);});
     body+=`</div>`;
-  } else if (bSort==='date') {
-    // flat list sorted by due date
+  } else {
+    // default: flat list sorted by due date
     const sorted=[...filtered].sort(byDate);
     body+=`<div class="task-grid">`;
     sorted.forEach(t=>{body+=taskRow(t);});
     body+=`</div>`;
-  } else if (bFilter!=='all') {
-    // single category, default order
-    body+=`<div class="task-grid">`;
-    filtered.forEach(t=>{body+=taskRow(t);});
-    body+=`</div>`;
-  } else {
-    // grouped by category, sorted by date within each group
-    // resolve old/aliased category IDs before grouping
-    const resolvecat = t => { const r=t.category||''; return CAT_ALIAS[r]||r||null; };
-    CATS.forEach(c=>{
-      const ct=[...filtered.filter(t=>resolvecat(t)===c.id)].sort(byDate);
-      if(!ct.length) return;
-      body+=`<div class="cat-hd"><div class="cat-dot" style="background:${c.color}"></div>
-               <div class="cat-hd-name">${c.emoji} ${c.name}</div><div class="cat-hd-ct">${ct.length}</div></div>`;
-      body+=`<div class="task-grid">`;
-      ct.forEach(t=>{body+=taskRow(t);});
-      body+=`</div>`;
-    });
-    // uncategorized tasks
-    const uncat=[...filtered.filter(t=>{ const r=resolvecat(t); return !r||!CATS.find(c=>c.id===r); })].sort(byDate);
-    if(uncat.length){
-      body+=`<div class="cat-hd"><div class="cat-dot" style="background:var(--border)"></div>
-               <div class="cat-hd-name">Uncategorized</div><div class="cat-hd-ct">${uncat.length}</div></div>`;
-      body+=`<div class="task-grid">`;
-      uncat.forEach(t=>{body+=taskRow(t);});
-      body+=`</div>`;
-    }
   }
   const searchBar=`<div class="b-search-wrap">
     <span class="b-search-ico">🔍</span>
@@ -2479,7 +2421,7 @@ function viewBacklog() {
 }
 
 function taskRow(t) {
-  const c=getcat(t.category);
+  const c={color:taskColor(t)};
   const onPlate=plateHas(t.id);
   const sc=scoreTask(t);
   const scoreBadge=sc!==null
@@ -2617,8 +2559,7 @@ function doSaveEdit(id, btn) {
     t.title=title;
     t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
     t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
-    t.category=document.getElementById('et-cat')?.value||null;
-    const newProjId=document.getElementById('et-project')?.value||null;
+        const newProjId=document.getElementById('et-project')?.value||null;
     if(newProjId){ t.projectId=newProjId; t.phaseId=document.getElementById('et-phase')?.value||undefined; if(!t.phaseId) delete t.phaseId; }
     else { delete t.projectId; delete t.phaseId; }
     const nowRecurring=document.getElementById('et-recur-opts')?.style.display!=='none';
@@ -2706,7 +2647,6 @@ function openEditSheet(id) {
   editChunks = t.chunks ? t.chunks.map(c=>({id:c.id,title:c.title,completedAt:c.completedAt||null,dueDate:c.dueDate||undefined})) : [];
   const dateVal=t.recurrence?(t.nextDue||''):(t.deadline||'');
   const dateLabel=t.recurrence?'Next due':'Deadline';
-  const cats=`<option value=""${!t.category?' selected':''}>— Uncategorized —</option>`+CATS.map(c=>`<option value="${c.id}"${t.category===c.id?' selected':''}>${c.emoji} ${c.name}</option>`).join('');
   const curProj=t.projectId?projects.find(p=>p.id===t.projectId):null;
   const projOpts=`<option value="">— No project —</option>`+projects.map(p=>`<option value="${p.id}"${t.projectId===p.id?' selected':''}>${esc(p.title)}</option>`).join('');
   const initPhases=curProj?.phases||[];
@@ -2722,8 +2662,6 @@ function openEditSheet(id) {
       <textarea class="edit-field" id="et-desc" rows="3" placeholder="Additional info, context…" style="resize:vertical;min-height:60px">${esc(t.description||'')}</textarea>
       <label class="edit-label">Link <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional — title becomes a hyperlink</span></label>
       <input class="edit-field" id="et-link" type="url" value="${esc(t.link||'')}" placeholder="https://…">
-      <label class="edit-label">Category</label>
-      <select class="edit-field" id="et-cat">${cats}</select>
       <label class="edit-label">Project <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-3)">optional</span></label>
       <select class="edit-field" id="et-project">${projOpts}</select>
       <div id="et-phase-row" style="${initPhases.length?'':'display:none'}">
@@ -3033,7 +2971,6 @@ function openAddProjectTaskModal(projId, phaseId) {
   const phase=phaseId?(proj?.phases||[]).find(ph=>ph.id===phaseId):null;
   const sub=phase?`${esc(proj?.title||'')} — ${esc(phase.title)}`:(proj?esc(proj.title):'');
   const defaultCat='comp-admin';
-  const catOpts=`<option value="" selected>— Uncategorized —</option>`+CATS.map(c=>`<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   const el=document.createElement('div');
   el.id='ptask-modal'; el.className='modal-ov';
   el.innerHTML=`<div class="modal-sheet" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
@@ -3042,8 +2979,6 @@ function openAddProjectTaskModal(projId, phaseId) {
       ${sub?`<div style="font-size:12px;color:var(--text-2);text-align:center;margin:-8px 0 14px">${sub}</div>`:''}
       <label class="edit-label">Task title</label>
       <input class="edit-field" id="pt-title" placeholder="Task title…" autocomplete="off">
-      <label class="edit-label">Category</label>
-      <select class="edit-field" id="pt-cat">${catOpts}</select>
       <label class="edit-label">Notes <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
       <textarea class="edit-field" id="pt-desc" rows="2" placeholder="Notes…" style="resize:vertical;min-height:50px"></textarea>
       <label class="edit-label">Link <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--text-3)">optional</span></label>
@@ -3114,7 +3049,7 @@ function doCreateProjectTask(projId, phaseId, btn) {
   const title=(document.getElementById('pt-title')?.value||'').trim();
   if(!title){showToast('Title required');if(btn){btn.disabled=false;btn.textContent='Add Task';btn.style.background='';}return;}
   try {
-  const category=document.getElementById('pt-cat')?.value||null;
+  const category=null; // categories retired
   const desc=(document.getElementById('pt-desc')?.value||'').trim()||undefined;
   const link=(document.getElementById('pt-link')?.value||'').trim()||undefined;
   const el=document.getElementById('ptask-modal');
@@ -3264,8 +3199,7 @@ document.addEventListener('click', e=>{
       // Lock button immediately so second tap does nothing
       btn.disabled=true; btn.textContent='Added ✓';
       btn.style.background='#4a9e6a';
-      const catEl=document.getElementById('f-cat');
-      const cat=catEl?catEl.value:AF.category;
+      const cat=null; // categories retired
       let recurrence=null;
       if(AF.recurring){
         if(AF.recurType==='interval'){
@@ -3408,8 +3342,7 @@ document.addEventListener('click', e=>{
       t.title=title;
       t.description=(document.getElementById('et-desc')?.value||'').trim()||undefined;
       t.link=(document.getElementById('et-link')?.value||'').trim()||undefined;
-      t.category=document.getElementById('et-cat')?.value||null;
-      const newProjId2=document.getElementById('et-project')?.value||null;
+            const newProjId2=document.getElementById('et-project')?.value||null;
       if(newProjId2){ t.projectId=newProjId2; t.phaseId=document.getElementById('et-phase')?.value||undefined; if(!t.phaseId) delete t.phaseId; }
       else { delete t.projectId; delete t.phaseId; }
       const nowRecurring2=document.getElementById('et-recur-opts')?.style.display!=='none';
