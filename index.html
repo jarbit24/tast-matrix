@@ -3484,6 +3484,53 @@ if (!localStorage.getItem('tm_imp_20260917')) {
   rv();
 }
 
+// ── One-time import: EM project milestones (Julie's items, 9/18) ──
+if (!localStorage.getItem('tm_imp_20260918_em')) {
+  let emProj = projects.find(p=>/\bEM\b/.test(p.title||''));
+  if (!emProj) {
+    emProj = {id:'imp_em_proj', title:'EM', color:'#5A7FB5', createdAt:localISOStr(), phases:[]};
+    projects.push(emProj);
+  }
+  const P = emProj.id;
+  const IMP2 = [
+    {id:'imp_em1', title:'Q4 check in Coded-Midwest', deadline:'2026-08-25',
+     description:'Unmapped values in Q4: 11 (n=3), 12 (n=1), 13 (n=2), 16 (n=1)'},
+    {id:'imp_em2', title:'Recode missing-data values', deadline:'2026-08-25',
+     description:'“Shown but did not answer” = -99 · “Not shown” = -88'},
+    {id:'imp_em3', title:'Demographic profile, AAPOR, frequency analysis', deadline:'2026-09-01'},
+    {id:'imp_em4', title:'Code EAP write-in + cross-tab with SV data use', deadline:'2026-09-01'},
+    {id:'imp_em5', title:'New codebook + clean-coded CSV', deadline:'2026-09-08',
+     link:'https://docs.google.com/spreadsheets/d/1QwptHf7WXBd-HRnl6_PFeRfnZb3LL5LAkIrPPan8mHA/edit?gid=0#gid=0'},
+    {id:'imp_em6', title:'Methods section draft', deadline:'2026-09-08',
+     description:'Based on existing draft',
+     link:'https://docs.google.com/document/d/1HZ3rJpf5gbSn2E83DD3rU8OhHJx_IdBH_6-cTpeK3BY/edit?tab=t.0'},
+    {id:'imp_em7', title:'Analysis battery (cross-tabs, K-W, logistic regression)', deadline:'2026-09-15',
+     chunks:[
+       {id:'imp_em7_s1', title:'Cross-tab: SV use (binary) × Q7 importance ratings', completedAt:null},
+       {id:'imp_em7_s2', title:'Cross-tab: Q4 hardest-to-access × SV use', completedAt:null},
+       {id:'imp_em7_s3', title:'Cross-tab: Q3 institutional support × SV use', completedAt:null},
+       {id:'imp_em7_s4', title:'Q7 ratings: descriptive + cross-tab with SV use', completedAt:null},
+       {id:'imp_em7_s5', title:'Q3/Q4 frequency analysis — RQ5', completedAt:null},
+       {id:'imp_em7_s6', title:'State-level (Q1) descriptive map of SV use', completedAt:null},
+       {id:'imp_em7_s7', title:'Q6 satisfaction × dataset type — Kruskal-Wallis (RQ6)', completedAt:null},
+       {id:'imp_em7_s8', title:'RQ1–3: logistic regression (tenure + education + credentials)', completedAt:null},
+       {id:'imp_em7_s9', title:'Integrate Q5/Q6/Q12 themes into crosstabs (SV use, EAP, Q7)', completedAt:null},
+     ]},
+    {id:'imp_em8', title:'Manuscript draft for editing', deadline:'2026-09-30',
+     description:'Framework: access (do EMs have/use SV tools?) + orientation (does SV use correlate with Q7 attention to vulnerable pops?). Name who is left behind (Q6/Q7) and why (Q5/Q12 themes). Flag non-user gap as Leave Nobody Behind structural gap (RQ1–3 predictors show who non-users are). Connect Q5/Q12 coded themes to SV use — bridges qual and quant.'},
+  ];
+  IMP2.forEach(n => {
+    if (_meta.del[n.id]) return; // user deleted it on another device — stay deleted
+    if (!tasks.some(t=>t.id===n.id)) tasks.push({
+      time:'medium', effort:'medium', recurrence:null, nextDue:null, chunks:null,
+      createdAt:localISOStr(), completedAt:null, deadline:null, rtv:2, projectId:P, ...n,
+    });
+  });
+  localStorage.setItem('tm_imp_20260918_em','1');
+  save();
+  rv();
+}
+
 
 // ── One-time seed: GGVI project task ────────────────────────
 // DISABLED: already delivered to the cloud; re-running on a fresh browser
